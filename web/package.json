@@ -1,0 +1,56 @@
+{
+  "name": "alpha-video-source",
+  "version": "1.0.0",
+  "description": "Byte sources and storage for the alpha-video players on the web: HTTP range requests, Blobs, memory or your own source, read through a small buffer and optionally stored in OPFS, IndexedDB, the Cache API or memory.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "module": "./dist/index.mjs",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "serve": "node test/range-server.mjs",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "range-requests",
+    "streaming",
+    "opfs",
+    "indexeddb",
+    "cache",
+    "byte-source"
+  ],
+  "author": "danielkpl2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MediaCacheDev/alpha-video-source.git",
+    "directory": "web"
+  },
+  "homepage": "https://github.com/MediaCacheDev/alpha-video-source#readme",
+  "bugs": {
+    "url": "https://github.com/MediaCacheDev/alpha-video-source/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "fake-indexeddb": "^6.2.6",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
