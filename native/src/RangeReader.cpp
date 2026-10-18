@@ -53,6 +53,9 @@ struct RangeReader::Core {
     int64_t filled = 0;
     int64_t failedBlock = -1;
     uint64_t failures = 0;
+    // The block tryRead last asked for, and the failure count then
+    int64_t askedBlock = -1;
+    uint64_t askedFailures = 0;
     std::string error;
     Stats stats;
 
@@ -74,6 +77,7 @@ private:
     void failLocked(int64_t index, const std::string& message);
 
 public:
+    int64_t read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<bool>* abort, bool wait);
     int64_t nextTargetLocked();
     bool heldLocked(int64_t index) const;
     bool pastEndLocked(int64_t index) const;
@@ -372,39 +376,58 @@ RangeReader::~RangeReader() {
 }
 
 int64_t RangeReader::read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<bool>* abort) {
+    return core_->read(pos, out, size, abort, true);
+}
+
+int64_t RangeReader::tryRead(int64_t pos, uint8_t* out, int64_t size) {
+    return core_->read(pos, out, size, nullptr, false);
+}
+
+int64_t RangeReader::Core::read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<bool>* abort, bool wait) {
     if (pos < 0 || size < 0) return -1;
     if (size == 0) return 0;
-    Core& c = *core_;
-    const int64_t index = pos / c.blockSize;
-    const int64_t offset = pos - index * c.blockSize;
+    const int64_t index = pos / blockSize;
+    const int64_t offset = pos - index * blockSize;
 
-    std::unique_lock<std::mutex> lock(c.mutex);
-    const uint64_t failuresBefore = c.failures;
-    c.readAheadPaused = false;
+    std::unique_lock<std::mutex> lock(mutex);
+    const uint64_t failuresBefore = failures;
+    readAheadPaused = false;
     for (;;) {
-        if (c.closed || (abort && abort->load())) return -1;
-        if (c.info.size >= 0 && pos >= c.info.size) return 0;
-        if (Bytes data = c.blockLocked(index)) {
+        if (closed || (abort && abort->load())) return -1;
+        if (info.size >= 0 && pos >= info.size) return 0;
+        if (Bytes data = blockLocked(index)) {
             const int64_t n = std::min<int64_t>(size, static_cast<int64_t>(data->size()) - offset);
             if (n <= 0) return 0;
             std::memcpy(out, data->data() + offset, static_cast<size_t>(n));
-            c.readEnd = pos + n;
-            c.changed.notify_all();
+            readEnd = pos + n;
+            changed.notify_all();
             return n;
         }
-        if (c.filling == index && offset < c.filled) {
-            const int64_t n = std::min(size, c.filled - offset);
-            std::memcpy(out, c.fillBuffer.data() + offset, static_cast<size_t>(n));
-            c.readEnd = pos + n;
+        if (filling == index && offset < filled) {
+            const int64_t n = std::min(size, filled - offset);
+            std::memcpy(out, fillBuffer.data() + offset, static_cast<size_t>(n));
+            readEnd = pos + n;
             return n;
         }
-        if (c.broken) return -1;
-        if (c.failures != failuresBefore && c.failedBlock == index) return -1;
-        if (c.demand != index) {
-            c.demand = index;
-            c.changed.notify_all();
+        if (broken) return -1;
+        if (wait) {
+            if (failures != failuresBefore && failedBlock == index) return -1;
+        } else if (askedBlock == index && failedBlock == index && failures != askedFailures) {
+            askedFailures = failures;
+            return -1;
         }
-        c.changed.wait_for(lock, kAbortPollInterval);
+        if (demand != index) {
+            demand = index;
+            changed.notify_all();
+        }
+        if (!wait) {
+            if (askedBlock != index) {
+                askedBlock = index;
+                askedFailures = failures;
+            }
+            return kPending;
+        }
+        changed.wait_for(lock, kAbortPollInterval);
     }
 }
 

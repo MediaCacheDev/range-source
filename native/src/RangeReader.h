@@ -64,6 +64,16 @@ public:
      */
     int64_t read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<bool>* abort = nullptr);
 
+    /** What tryRead returns while the bytes are on their way. */
+    static constexpr int64_t kPending = -2;
+
+    /**
+     * read() without waiting, for a caller that must not block, such as a render loop. Returns
+     * kPending when the bytes aren't held yet: it asks for them, so a later call finds them. A
+     * later call returns -1, once, if fetching them failed; the call after that asks again.
+     */
+    int64_t tryRead(int64_t pos, uint8_t* out, int64_t size);
+
     /** Reads the whole file, so that it's held in the store. False on an error or abort. */
     bool fetchAll(const std::atomic<bool>* abort = nullptr);
 

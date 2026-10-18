@@ -343,6 +343,56 @@ TEST(closingDoesntWaitForTheUpstream) {
     remote->stall = false;
 }
 
+TEST(tryReadAsksForTheBytesAndFindsThemLater) {
+    auto remote = remoteOf(8 * MB);
+    remote->readDelayUs = 200;
+    auto reader = openReader(remote);
+    std::vector<uint8_t> buffer(1000);
+    const int64_t pos = 6 * MB + 100;
+    CHECK(reader->tryRead(pos, buffer.data(), 1000) == RangeReader::kPending);
+    int64_t n = RangeReader::kPending;
+    waitFor([&] { return (n = reader->tryRead(pos, buffer.data(), 1000)) != RangeReader::kPending; });
+    CHECK(n == 1000, "read %lld", (long long)n);
+    CHECK(std::memcmp(buffer.data(), remote->content.data() + pos, 1000) == 0);
+    std::vector<int64_t> opens = remote->openPositions();
+    CHECK(opens.size() == 2 && opens[1] == 6 * MB, "%zu opens", opens.size());
+    // Reading on in order, polling, stays on that request
+    std::vector<uint8_t> piece(64 * KB);
+    for (int64_t at = pos + 1000; at < 8 * MB;) {
+        int64_t got = RangeReader::kPending;
+        waitFor([&] { return (got = reader->tryRead(at, piece.data(), 64 * KB)) != RangeReader::kPending; });
+        if (got <= 0) {
+            CHECK(got > 0, "read at %lld returned %lld", (long long)at, (long long)got);
+            break;
+        }
+        CHECK(std::memcmp(piece.data(), remote->content.data() + at, static_cast<size_t>(got)) == 0);
+        at += got;
+    }
+    CHECK(remote->openPositions().size() == 2, "%zu opens", remote->openPositions().size());
+}
+
+TEST(tryReadReportsAFailedFetchOnceThenAsksAgain) {
+    auto remote = remoteOf(3 * MB);
+    auto reader = openReader(remote);
+    {
+        std::lock_guard<std::mutex> lock(remote->mutex);
+        remote->offline = true;
+    }
+    std::vector<uint8_t> buffer(1000);
+    CHECK(reader->tryRead(2 * MB, buffer.data(), 1000) == RangeReader::kPending);
+    int64_t n = RangeReader::kPending;
+    waitFor([&] { return (n = reader->tryRead(2 * MB, buffer.data(), 1000)) != RangeReader::kPending; });
+    CHECK(n == -1, "read %lld", (long long)n);
+    CHECK(reader->lastError() == "offline", "error %s", reader->lastError().c_str());
+    {
+        std::lock_guard<std::mutex> lock(remote->mutex);
+        remote->offline = false;
+    }
+    waitFor([&] { return (n = reader->tryRead(2 * MB, buffer.data(), 1000)) != RangeReader::kPending; });
+    CHECK(n == 1000, "read %lld", (long long)n);
+    CHECK(std::memcmp(buffer.data(), remote->content.data() + 2 * MB, 1000) == 0);
+}
+
 TEST(fetchAllReadsEveryByte) {
     auto remote = remoteOf(3 * MB + 1);
     auto reader = openReader(remote);
