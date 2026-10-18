@@ -24,6 +24,13 @@ export interface ByteReader {
   readonly size: number;
   /** `length` bytes from `offset`, fewer only where the source ends. */
   read(offset: number, length: number, signal?: AbortSignal): Promise<Uint8Array>;
+  /**
+   * The bytes from `offset` held in memory, without waiting, for code that can't await (a
+   * WebAssembly demuxer): up to `length`, but no further than the end of the block holding
+   * them. Empty at or past the end of the source; null when they aren't in memory, so read()
+   * them and peek again. Reads ahead like read().
+   */
+  peek(offset: number, length: number): Uint8Array | null;
   /** Starts fetching a range in the background, if it isn't held already. */
   prefetch(offset: number, length: number): void;
   close(): void;
@@ -135,6 +142,20 @@ class BlockReader implements ByteReader {
     }
     this.readAhead(end);
     return out;
+  }
+
+  peek(offset: number, length: number): Uint8Array | null {
+    this.throwIfClosed();
+    if (offset >= this.size || length <= 0) return new Uint8Array(0);
+    const index = Math.floor(offset / this.blockSize);
+    const block = this.memory.get(index);
+    if (!block) return null;
+    this.memory.delete(index);
+    this.memory.set(index, block);
+    const from = offset - index * this.blockSize;
+    const to = Math.min(block.byteLength, from + length);
+    this.readAhead(index * this.blockSize + to);
+    return block.subarray(from, to);
   }
 
   prefetch(offset: number, length: number): void {

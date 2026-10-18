@@ -21,6 +21,38 @@ describe('openReader without a store', () => {
     reader.close();
   });
 
+  it('peeks at bytes held in memory, up to the end of their block, without waiting', async () => {
+    const data = pattern(300 * KB);
+    const source = new CountingSource(data);
+    const reader = await openReader(source, { blockSize: 64 * KB, readAheadBytes: 0 });
+    expect(reader.peek(10, 100)).toBeNull();
+    expect(source.reads.length).toBe(0);
+    await reader.read(10, 1);
+    expectSlice(reader.peek(10, 100)!, data, 10, 100);
+    expectSlice(reader.peek(60 * KB, 10 * KB)!, data, 60 * KB, 4 * KB);
+    expect(reader.peek(64 * KB, 1)).toBeNull();
+    expect(reader.peek(300 * KB, 10)!.byteLength).toBe(0);
+    expect(source.reads.length).toBe(1);
+    reader.close();
+    expect(() => reader.peek(10, 1)).toThrow();
+  });
+
+  it('reads ahead from a peek', async () => {
+    const data = pattern(1000 * KB);
+    const source = new CountingSource(data);
+    const reader = await openReader(source, { blockSize: 64 * KB, readAheadBytes: 128 * KB });
+    await reader.read(0, 1);
+    await tick(5);
+    expect(source.reads).toEqual([
+      { offset: 0, length: 64 * KB },
+      { offset: 64 * KB, length: 128 * KB },
+    ]);
+    expect(reader.peek(64 * KB, 1)).not.toBeNull();
+    await tick(5);
+    expect(source.reads[2]).toEqual({ offset: 192 * KB, length: 64 * KB });
+    reader.close();
+  });
+
   it('splits big runs at maxRequestBytes', async () => {
     const data = pattern(1000 * KB);
     const source = new CountingSource(data);

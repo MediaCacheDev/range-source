@@ -50,7 +50,7 @@ Failed requests throw `HttpSourceError`, with its `status` and `url`.
 
 ## Reading
 
-`openReader(source, options)` returns a reader with `read(offset, length, signal)`, `prefetch(offset, length)` and `close()`. It reads the source in 256 KB blocks:
+`openReader(source, options)` returns a reader with `read(offset, length, signal)`, `peek(offset, length)`, `prefetch(offset, length)` and `close()`. `peek` is for code that can't await, such as a WebAssembly demuxer: it returns the bytes already in memory at once, up to the end of their block, or null if they aren't there yet, and then you `read` them and peek again. It reads ahead like `read`. The reader reads the source in 256 KB blocks:
 
 - It keeps up to 16 MB of blocks in memory (`memoryBytes`), evicting the least recently used. So a clip of up to 16 MB loops without fetching again, even with no store.
 - After each read, it fetches 1 MB further in the background (`readAheadBytes`, 0 to turn it off). A read that needs a block already being fetched waits for it; other background fetches are aborted, so a seek isn't stuck behind read-ahead.
