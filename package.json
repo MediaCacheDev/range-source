@@ -1,0 +1,58 @@
+{
+  "name": "react-native-range-source",
+  "version": "1.0.0",
+  "description": "Range streaming and storage for React Native players (react-native-alpha-video, react-native-alpha-video-gpu): URLs read by range with one open request, read-ahead and retries, kept on disk or in memory under one cap, and app data sources. Install it beside the player; there's nothing to call.",
+  "main": "react-native/index.js",
+  "types": "react-native/index.d.ts",
+  "react-native": "react-native/index.js",
+  "files": [
+    "react-native",
+    "android",
+    "native/include",
+    "native/src",
+    "ios",
+    "react-native-range-source.podspec",
+    "react-native.config.js",
+    "LICENSE",
+    "!android/build",
+    "!android/*/build",
+    "!android/.gradle",
+    "!android/.cxx",
+    "!android/local.properties",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/media3",
+    "!android/src/androidTest",
+    "!react-native/android/build",
+    "!react-native/android/.gradle",
+    "!react-native/android/.cxx",
+    "!.DS_Store"
+  ],
+  "keywords": [
+    "react-native",
+    "range-requests",
+    "streaming",
+    "cache",
+    "storage",
+    "video",
+    "ios",
+    "android"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MediaCacheDev/range-source.git"
+  },
+  "author": "Daniel Kasprowicz",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/MediaCacheDev/range-source/issues"
+  },
+  "homepage": "https://github.com/MediaCacheDev/range-source#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "react-native": "*"
+  }
+}

@@ -1,0 +1,4 @@
+rootProject.name = 'range-source'
+
+// dev.mediacache:range-source-media3, opt-in
+include ':media3'

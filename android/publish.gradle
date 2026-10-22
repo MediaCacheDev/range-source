@@ -1,0 +1,72 @@
+// Maven publication for dev.mediacache:range-source, and for range-source-media3 (its
+// build.gradle sets publishArtifactId and publishDescription before applying this). Run it through
+// scripts/publish-android.sh.
+//
+// Signing reads ORG_GRADLE_PROJECT_signingInMemoryKey (armored secret key), …KeyPassword and
+// optionally …KeyId. Without a key the artifacts are left unsigned, which is enough for
+// publishToMavenLocal.
+
+apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
+def repoUrl = 'https://github.com/MediaCacheDev/range-source'
+def artifact = project.ext.has('publishArtifactId') ? project.ext.publishArtifactId : 'range-source'
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                artifactId = artifact
+
+                pom {
+                    name = artifact
+                    description = project.ext.has('publishDescription') ? project.ext.publishDescription : 'Range streaming and storage for players that read files by offset: one open request, read-ahead, retries, and disk and memory stores under one cap.'
+                    url = repoUrl
+                    inceptionYear = '2026'
+                    licenses {
+                        license {
+                            name = 'MIT'
+                            url = 'https://opensource.org/licenses/MIT'
+                            distribution = 'repo'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'danielkpl2'
+                            name = 'Daniel Kasprowicz'
+                            email = '9932671+danielkpl2@users.noreply.github.com'
+                            url = 'https://github.com/danielkpl2'
+                        }
+                    }
+                    scm {
+                        connection = "scm:git:${repoUrl}.git"
+                        developerConnection = "scm:git:${repoUrl}.git"
+                        url = repoUrl
+                    }
+                }
+            }
+        }
+        repositories {
+            maven {
+                name = 'staging'
+                // Both artifacts, so that one bundle uploads them together
+                url = rootProject.layout.buildDirectory.dir('staging-repo')
+            }
+        }
+    }
+
+    def signingKey = findProperty('signingInMemoryKey')
+    if (signingKey) {
+        signing {
+            def keyId = findProperty('signingInMemoryKeyId')
+            def password = findProperty('signingInMemoryKeyPassword')
+            if (keyId) {
+                useInMemoryPgpKeys(keyId, signingKey, password)
+            } else {
+                useInMemoryPgpKeys(signingKey, password)
+            }
+            sign publishing.publications.release
+        }
+    }
+}

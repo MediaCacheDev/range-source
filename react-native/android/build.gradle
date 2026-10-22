@@ -1,0 +1,59 @@
+// react-native-range-source's Android module: the Android library's sources (../../android) and
+// native code (../../native), built in the app as the Maven artifact dev.mediacache:range-source
+// is, plus an empty React Native package for autolinking to find. The players find the add-on at
+// run time; there's nothing to call from JavaScript.
+
+apply plugin: 'com.android.library'
+
+def safeExtGet(name, fallback) {
+    return rootProject.ext.has(name) ? rootProject.ext.get(name) : fallback
+}
+
+def coreDir = file('../../android')
+
+android {
+    namespace 'dev.mediacache.rangesource.reactnative'
+    compileSdk safeExtGet('compileSdkVersion', 36)
+    ndkVersion safeExtGet('ndkVersion', '27.1.12297006')
+
+    defaultConfig {
+        minSdk safeExtGet('minSdkVersion', 24)
+        consumerProguardFiles "${coreDir}/consumer-rules.pro"
+
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17 -fexceptions -Os'
+                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+                // Its own C++ runtime, as in the Maven artifact: the players reach it through C only
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "${coreDir}/src/main/cpp/CMakeLists.txt"
+            version '3.22.1'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java', "${coreDir}/src/main/java"]
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.facebook.react:react-android'
+}

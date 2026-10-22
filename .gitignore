@@ -4,3 +4,8 @@ node_modules/
 *.log
 web/dist/
 native/build*/
+android/build/
+android/media3/build/
+android/.gradle/
+android/.cxx/
+android/local.properties
