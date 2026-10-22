@@ -439,9 +439,17 @@ bool RangeReader::fetchAll(AbortFlag abort) {
     for (int64_t pos = 0;;) {
         const int64_t n = read(pos, scratch.data(), static_cast<int64_t>(scratch.size()), abort);
         if (n < 0) return false;
-        if (n == 0) return true;
+        if (n == 0) break;
         pos += n;
     }
+    // Reads take a block's bytes as they arrive, so the last block can still be filling, not yet
+    // stored, and a close now would lose it
+    std::unique_lock<std::mutex> lock(core_->mutex);
+    while (core_->filling >= 0) {
+        if (core_->closed || abort.raised()) return false;
+        core_->changed.wait_for(lock, kAbortPollInterval);
+    }
+    return true;
 }
 
 int64_t RangeReader::size() const {

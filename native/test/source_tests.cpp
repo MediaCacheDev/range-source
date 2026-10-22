@@ -510,6 +510,19 @@ TEST(aStoredFilePlaysOffline) {
     CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
 }
 
+TEST(fetchAllReturnsOnceTheStoreHoldsEveryBlock) {
+    auto store = diskStore(tempDir("fetchall"), 64 * MB);
+    auto remote = remoteOf(100 * KB + 1);
+    // Closing at once must not lose the last block, which reads can take before it's stored
+    for (int i = 0; i < 300; i++) {
+        const std::string key = "clip" + std::to_string(i);
+        auto reader = openReader(remote, store, key);
+        CHECK(reader->fetchAll());
+        reader->close();
+        CHECK(holdsWhole(store, key), "try %d: not whole", i);
+    }
+}
+
 TEST(aStoreSurvivesTheProcess) {
     const std::string dir = tempDir("reload");
     auto remote = remoteOf(1 * MB + 3);
