@@ -15,6 +15,11 @@ target_include_directories(range_source PUBLIC src include)
 target_compile_options(range_source PRIVATE -Wall -Wextra)
 target_link_libraries(range_source PUBLIC Threads::Threads)
 
+# Tests only when built on its own, not when an app adds it with add_subdirectory
+if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    return()
+endif()
+
 enable_testing()
 
 add_executable(range_source_tests test/source_tests.cpp)

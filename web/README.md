@@ -8,6 +8,43 @@ The alpha-video players (`alpha-video-web` and `alpha-video-gpu-web`) depend on 
 npm install range-source-web
 ```
 
+## Using it in your own code
+
+Anything that reads a file by offset can read through it: a video or audio player's demuxer, a parser for images, fonts, archives or map tiles. Make a source, choose a store, open a reader, and read by offset:
+
+```ts
+import { createStore, httpSource, openReader } from 'range-source-web';
+
+// One store per app or player, shared by every reader; null for 'none'
+const store = createStore('auto', { namespace: 'my-player', maxBytes: 256 * 1024 * 1024 });
+
+const reader = await openReader(httpSource(url, { headers: { Authorization: `Bearer ${token}` } }), {
+  store,
+  key: trackId, // what the copy is kept under: the URL, or an id that outlives presigned URLs
+});
+
+reader.size; // the file's length, from the first response
+const head = await reader.read(0, 64 * 1024); // one request, kept open and read on
+const tail = await reader.read(reader.size - 16 * 1024, 16 * 1024); // a seek: a second request
+reader.close();
+```
+
+- **Reading in order** from the start is one HTTP request. Each `read` resolves once its bytes are in, and the reader fetches 1 MB ahead of the last read, so a demuxer reading on rarely waits.
+- **A seek** is a `read` somewhere else. The reader opens a request at that offset, and aborts its own read-ahead so the seek isn't stuck behind it. If you know where the player will go next, `prefetch(offset, length)` starts fetching it without waiting.
+- **Storage:** with a store, every block that arrives is kept under `key`. A file played through plays again with no requests, offline too, and a file held in part fetches only what's missing. Leave out `store` for none: the reader still keeps 16 MB of blocks in memory, so a short clip loops without fetching again.
+- **Code that can't await,** such as a WebAssembly demuxer called synchronously, uses `peek(offset, length)`. It returns the bytes in memory at once, or null. On null, return "not yet" to your caller, `await reader.read(offset, length)`, and call again:
+
+  ```ts
+  function bytesFor(offset: number, length: number): Uint8Array | null {
+    const bytes = reader.peek(offset, length);
+    if (!bytes) void reader.read(offset, length).then(retryDemux);
+    return bytes;
+  }
+  ```
+
+- **Cancelling:** pass an `AbortSignal` to `openReader` or to a `read`, for example when the user changes track. `close()` aborts everything the reader has in flight.
+- **Other sources:** `blobSource(file)` for a `File` the user picked, `memorySource(bytes)`, or an object of your own with `size` and `read` (below), for a fetcher, cache or decryption of your own. They all work with the same reader and stores.
+
 ## Sources
 
 A source reads bytes by offset:
