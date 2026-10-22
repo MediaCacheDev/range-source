@@ -13,10 +13,12 @@ The players own range streaming and storage, and depend on nothing else. Other c
 - `Store` keeps clips between plays in 256 KB blocks, under one byte cap, least recently used out: `Store::disk(dir, maxBytes)` (per clip, a sparse data file and a meta file of its size, version and blocks held, named by a hash of the key) or `Store::memory(name, maxBytes)`. There is one store per folder or name in the process. A different version of a clip drops its copy, and a block that has gone missing is fetched again.
 - `RangeReader` reads by offset, blocking until the bytes are there, through blocks in memory and the store. One fetch thread keeps one read open on the upstream and reconnects only for a read far from it, so playing from the start is one request and a seek one more. It reads 2 MB ahead of the last read, retries a failed read 3 times, and `fetchAll()` reads the whole file. `tryRead()` never waits, for render loops: it returns `kPending` and asks for the bytes, so a later call finds them. A clip the store holds whole is read without opening the upstream, so it plays offline. Thread-safe.
 
-The host build runs the tests:
+These are C++ classes in the namespace `rangesource`. [`include/range_source.h`](native/include/range_source.h) is the same as a C interface: a versioned table of functions (`range_source_plugin()`), with the upstream as a struct of function pointers. Code built separately, such as a player in another `.so` with its own C++ runtime, uses the reader through it. With `RANGE_SOURCE_CLIENT_NAMESPACE` defined, the header adds a C++ wrapper over the table with the classes' methods, in a namespace the includer names.
+
+The host build runs the tests twice, on the classes and through the table:
 
 ```bash
-cmake -S native -B native/build -G Ninja && cmake --build native/build && native/build/source_tests
+cmake -S native -B native/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build native/build && ctest --test-dir native/build
 ```
 
 ## License

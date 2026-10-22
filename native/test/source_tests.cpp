@@ -1,9 +1,15 @@
-// Host tests for the native range reader and stores.
+// Host tests for the native range reader and stores, built twice: on the C++ classes
+// (range_source_tests), and through the C table in range_source.h (range_source_abi_tests).
 //
-//   cmake -S native -B native/build -G Ninja && cmake --build native/build && native/build/source_tests
+//   cmake -S native -B native/build -G Ninja && cmake --build native/build && ctest --test-dir native/build
 
+#ifdef RANGE_SOURCE_TESTS_THROUGH_ABI
+#define RANGE_SOURCE_CLIENT_NAMESPACE rangesource_client
+#include "range_source.h"
+#else
 #include "RangeReader.h"
 #include "Store.h"
+#endif
 
 #include <chrono>
 #include <cstdio>
@@ -17,7 +23,70 @@
 #include <unistd.h>
 #include <vector>
 
-using namespace avsource;
+#ifdef RANGE_SOURCE_TESTS_THROUGH_ABI
+
+using namespace rangesource_client;
+using TestAbort = std::atomic<int32_t>;
+
+extern "C" int range_source_c_tests(char* failure, size_t failureSize);
+
+namespace {
+
+std::shared_ptr<Store> diskStore(const std::string& dir, int64_t maxBytes) {
+    return Store::disk(range_source_plugin(), dir, maxBytes);
+}
+
+std::shared_ptr<Store> memoryStore(const std::string& name, int64_t maxBytes) {
+    return Store::memory(range_source_plugin(), name, maxBytes);
+}
+
+std::shared_ptr<RangeReader> openRaw(std::unique_ptr<Upstream> upstream, const std::shared_ptr<Store>& store,
+                                     const std::string& key, const ReaderOptions& options, std::string& error) {
+    return RangeReader::open(range_source_plugin(), std::move(upstream), store, key, options, error);
+}
+
+bool holds(const std::shared_ptr<Store>& store, const std::string& key) {
+    return store->holds(key) != RANGE_SOURCE_HOLDS_NONE;
+}
+
+bool holdsWhole(const std::shared_ptr<Store>& store, const std::string& key) {
+    return store->holds(key) == RANGE_SOURCE_HOLDS_WHOLE;
+}
+
+} // namespace
+
+#else
+
+using namespace rangesource;
+using TestAbort = std::atomic<bool>;
+
+namespace {
+
+std::shared_ptr<Store> diskStore(const std::string& dir, int64_t maxBytes) {
+    return Store::disk(dir, maxBytes);
+}
+
+std::shared_ptr<Store> memoryStore(const std::string& name, int64_t maxBytes) {
+    return Store::memory(name, maxBytes);
+}
+
+std::shared_ptr<RangeReader> openRaw(std::unique_ptr<Upstream> upstream, const std::shared_ptr<Store>& store,
+                                     const std::string& key, const ReaderOptions& options, std::string& error) {
+    return RangeReader::open(std::move(upstream), store, key, options, error);
+}
+
+bool holds(const std::shared_ptr<Store>& store, const std::string& key) {
+    return store->find(key) != nullptr;
+}
+
+bool holdsWhole(const std::shared_ptr<Store>& store, const std::string& key) {
+    auto file = store->find(key);
+    return file && file->complete();
+}
+
+} // namespace
+
+#endif
 
 namespace {
 
@@ -67,6 +136,7 @@ struct Remote {
     std::string etag = "v1";
     bool knowsSize = true;
     std::atomic<bool> offline{false};
+    std::string offlineError = "offline";
     int64_t chunk = 16 * KB;
     int readDelayUs = 0;
     int failOpens = 0;
@@ -91,7 +161,7 @@ public:
         std::lock_guard<std::mutex> lock(remote_->mutex);
         cancelled_ = false;
         if (remote_->offline) {
-            error = "offline";
+            error = remote_->offlineError;
             return false;
         }
         if (remote_->failOpens > 0) {
@@ -164,7 +234,7 @@ ReaderOptions quickRetries() {
 std::shared_ptr<RangeReader> openReader(const std::shared_ptr<Remote>& remote, std::shared_ptr<Store> store = nullptr,
                                         const std::string& key = "", ReaderOptions options = quickRetries()) {
     std::string error;
-    auto reader = RangeReader::open(std::make_unique<FakeUpstream>(remote), std::move(store), key, options, error);
+    auto reader = openRaw(std::make_unique<FakeUpstream>(remote), store, key, options, error);
     CHECK(reader, "open failed: %s", error.c_str());
     return reader;
 }
@@ -190,10 +260,16 @@ bool readsMatch(RangeReader& reader, const std::vector<uint8_t>& content, int64_
     return true;
 }
 
+std::vector<std::string>& tempDirs() {
+    static std::vector<std::string> all;
+    return all;
+}
+
 std::string tempDir(const char* name) {
     static int counter = 0;
-    std::string dir = "/tmp/avsource-test-" + std::to_string(getpid()) + "-" + std::to_string(counter++) + "-" + name;
+    std::string dir = "/tmp/range-source-test-" + std::to_string(getpid()) + "-" + std::to_string(counter++) + "-" + name;
     std::system(("rm -rf '" + dir + "'").c_str());
+    tempDirs().push_back(dir);
     return dir;
 }
 
@@ -221,6 +297,8 @@ TEST(aSeekReconnectsAtItsBlockAndReadsOnFromThere) {
     auto remote = remoteOf(8 * MB);
     auto reader = openReader(remote);
     CHECK(readsMatch(*reader, remote->content, 0, 100 * KB));
+    // Read-ahead done, so that coming back below needs nothing
+    waitFor([&] { return reader->stats().bytesFetched >= 100 * KB + 2 * MB; });
     CHECK(readsMatch(*reader, remote->content, 6 * MB + 1000, 1 * MB));
     std::vector<int64_t> opens = remote->openPositions();
     CHECK(opens.size() == 2, "%zu opens", opens.size());
@@ -228,6 +306,15 @@ TEST(aSeekReconnectsAtItsBlockAndReadsOnFromThere) {
     // Back to the start: held in memory, no request
     CHECK(readsMatch(*reader, remote->content, 0, 100 * KB));
     CHECK(remote->openPositions().size() == 2);
+}
+
+TEST(aSeekDuringReadAheadDoesntGoBack) {
+    auto remote = remoteOf(8 * MB);
+    auto reader = openReader(remote);
+    CHECK(readsMatch(*reader, remote->content, 0, 100 * KB));
+    CHECK(readsMatch(*reader, remote->content, 6 * MB + 1000, 1 * MB));
+    std::vector<int64_t> opens = remote->openPositions();
+    CHECK(opens.size() == 2, "%zu opens", opens.size());
 }
 
 TEST(aShortSkipReadsThrough) {
@@ -295,7 +382,7 @@ TEST(openFailsWhenTheSourceCantBeOpened) {
     auto remote = remoteOf(1 * MB);
     remote->offline = true;
     std::string error;
-    auto reader = RangeReader::open(std::make_unique<FakeUpstream>(remote), nullptr, "", quickRetries(), error);
+    auto reader = openRaw(std::make_unique<FakeUpstream>(remote), nullptr, "", quickRetries(), error);
     CHECK(!reader);
     CHECK(error == "offline");
 }
@@ -316,7 +403,7 @@ TEST(abortStopsAWaitingRead) {
     // Before the fetch thread's read-ahead can get there
     remote->stall = true;
     auto reader = openReader(remote);
-    std::atomic<bool> abort{false};
+    TestAbort abort{false};
     std::thread later([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         abort = true;
@@ -405,7 +492,7 @@ TEST(fetchAllReadsEveryByte) {
 //==============================================================================
 
 TEST(aStoredFilePlaysOffline) {
-    auto store = Store::disk(tempDir("offline"), 64 * MB);
+    auto store = diskStore(tempDir("offline"), 64 * MB);
     CHECK(store);
     auto remote = remoteOf(3 * MB + 100);
     {
@@ -423,14 +510,14 @@ TEST(aStoreSurvivesTheProcess) {
     const std::string dir = tempDir("reload");
     auto remote = remoteOf(1 * MB + 3);
     {
-        auto store = Store::disk(dir, 64 * MB);
+        auto store = diskStore(dir, 64 * MB);
         auto reader = openReader(remote, store, "https://example.com/a.webm");
         CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
         reader.reset();
         waitFor([&] { return store->bytesUsed() == static_cast<int64_t>(remote->content.size()); });
     }
     // Another path to the folder is another store, which reads the index from disk
-    auto store = Store::disk(dir + "/.", 64 * MB);
+    auto store = diskStore(dir + "/.", 64 * MB);
     CHECK(store->bytesUsed() == static_cast<int64_t>(remote->content.size()), "used %lld", (long long)store->bytesUsed());
     remote->offline = true;
     auto reader = openReader(remote, store, "https://example.com/a.webm");
@@ -438,7 +525,7 @@ TEST(aStoreSurvivesTheProcess) {
 }
 
 TEST(aPartialCopyIsCheckedAndKept) {
-    auto store = Store::disk(tempDir("partial"), 64 * MB);
+    auto store = diskStore(tempDir("partial"), 64 * MB);
     auto remote = remoteOf(4 * MB);
     ReaderOptions options = quickRetries();
     options.readAheadBytes = 0;
@@ -454,7 +541,7 @@ TEST(aPartialCopyIsCheckedAndKept) {
 }
 
 TEST(aChangedSourceReplacesTheCopy) {
-    auto store = Store::disk(tempDir("changed"), 64 * MB);
+    auto store = diskStore(tempDir("changed"), 64 * MB);
     auto remote = remoteOf(2 * MB);
     ReaderOptions options = quickRetries();
     options.readAheadBytes = 0;
@@ -469,7 +556,7 @@ TEST(aChangedSourceReplacesTheCopy) {
 }
 
 TEST(aChangeWhilePlayingFailsTheRead) {
-    auto store = Store::disk(tempDir("midway"), 64 * MB);
+    auto store = diskStore(tempDir("midway"), 64 * MB);
     auto remote = remoteOf(4 * MB);
     ReaderOptions options = quickRetries();
     options.readAheadBytes = 0;
@@ -482,36 +569,35 @@ TEST(aChangeWhilePlayingFailsTheRead) {
     std::vector<uint8_t> buffer(100);
     CHECK(reader->read(3 * MB, buffer.data(), 100) == -1);
     CHECK(reader->lastError() == "the source changed while it was read", "%s", reader->lastError().c_str());
-    CHECK(!store->find("clip"));
+    CHECK(!holds(store, "clip"));
 }
 
 TEST(theCapEvictsTheLeastRecentlyUsed) {
-    auto store = Store::disk(tempDir("evict"), 5 * MB);
+    auto store = diskStore(tempDir("evict"), 5 * MB);
     auto a = remoteOf(2 * MB, 1), b = remoteOf(2 * MB, 2), c = remoteOf(2 * MB, 3);
     for (auto& [key, remote] : std::vector<std::pair<std::string, std::shared_ptr<Remote>>>{{"a", a}, {"b", b}, {"c", c}}) {
         auto reader = openReader(remote, store, key);
         CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
         reader.reset();
-        waitFor([&] { auto f = store->find(key); return f && f->complete(); });
+        waitFor([&] { return holdsWhole(store, key); });
     }
     CHECK(store->bytesUsed() <= 5 * MB, "used %lld", (long long)store->bytesUsed());
-    CHECK(!store->find("a"));
-    CHECK(store->find("b") && store->find("c"));
+    CHECK(!holds(store, "a"));
+    CHECK(holds(store, "b") && holds(store, "c"));
 }
 
 TEST(anOpenKeyIsntEvicted) {
-    auto store = Store::disk(tempDir("open"), 3 * MB);
+    auto store = diskStore(tempDir("open"), 3 * MB);
     auto a = remoteOf(2 * MB, 1), b = remoteOf(2 * MB, 2);
     auto readerA = openReader(a, store, "a");
     CHECK(readsMatch(*readerA, a->content, 0, 1LL << 40));
     auto readerB = openReader(b, store, "b");
     CHECK(readsMatch(*readerB, b->content, 0, 1LL << 40));
-    auto held = store->find("a");
-    CHECK(held && held->complete());
+    CHECK(holdsWhole(store, "a"));
 }
 
 TEST(aMemoryStoreIsSharedByReaders) {
-    auto store = Store::memory("test", 64 * MB);
+    auto store = memoryStore("test", 64 * MB);
     auto remote = remoteOf(1 * MB);
     {
         auto reader = openReader(remote, store, "clip");
@@ -524,7 +610,7 @@ TEST(aMemoryStoreIsSharedByReaders) {
 
 TEST(aMissingBlockIsFetchedAgain) {
     const std::string dir = tempDir("missing");
-    auto store = Store::disk(dir, 64 * MB);
+    auto store = diskStore(dir, 64 * MB);
     auto remote = remoteOf(1 * MB);
     {
         auto reader = openReader(remote, store, "clip");
@@ -536,6 +622,44 @@ TEST(aMissingBlockIsFetchedAgain) {
     CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
 }
 
+#ifdef RANGE_SOURCE_TESTS_THROUGH_ABI
+
+//==============================================================================
+// The C table
+//==============================================================================
+
+TEST(theTableHasEveryFunction) {
+    const RangeSourcePlugin* p = range_source_plugin();
+    CHECK(p->abi == RANGE_SOURCE_ABI);
+    CHECK(p->structSize == sizeof(RangeSourcePlugin));
+    CHECK(p->version && *p->version);
+    // Every member after `version` is a function pointer
+    const auto* functions = reinterpret_cast<void* const*>(reinterpret_cast<const char*>(p) + offsetof(RangeSourcePlugin, diskStore));
+    const size_t count = (sizeof(RangeSourcePlugin) - offsetof(RangeSourcePlugin, diskStore)) / sizeof(void*);
+    for (size_t i = 0; i < count; i++) CHECK(functions[i], "function %zu is null", i);
+}
+
+TEST(anUpstreamInCReadsThroughTheTable) {
+    char failure[256] = "";
+    CHECK(range_source_c_tests(failure, sizeof(failure)), "%s", failure);
+}
+
+TEST(aLongUpstreamErrorIsCutNotLost) {
+    auto remote = remoteOf(1 * MB);
+    auto reader = openReader(remote);
+    const std::string message(2000, 'x');
+    {
+        std::lock_guard<std::mutex> lock(remote->mutex);
+        remote->offlineError = message;
+        remote->offline = true;
+    }
+    std::vector<uint8_t> buffer(10);
+    CHECK(reader->read(900 * KB, buffer.data(), 10) == -1);
+    CHECK(reader->lastError() == message.substr(0, 511), "%zu characters", reader->lastError().size());
+}
+
+#endif
+
 int main() {
     for (auto& [name, fn] : tests()) {
         const int before = failures;
@@ -543,5 +667,6 @@ int main() {
         std::printf("%s %s\n", failures == before ? "ok  " : "FAIL", name);
     }
     std::printf("%zu tests, %d failures\n", tests().size(), failures);
+    for (const auto& dir : tempDirs()) std::system(("rm -rf '" + dir + "'").c_str());
     return failures == 0 ? 0 : 1;
 }
