@@ -20,7 +20,9 @@ Pod::Spec.new do |s|
   s.source_files        = 'native/include/*.h', 'native/src/*.{h,cpp}', 'ios/Sources/RangeSource/**/*.{h,mm}'
   s.public_header_files = 'ios/Sources/RangeSource/include/*.h'
   s.libraries           = 'c++'
+  # DEFINES_MODULE: Swift apps import RangeSource (RangeDataSources) without use_frameworks!
   s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/native/include" "$(PODS_TARGET_SRCROOT)/native/src"'
   }

@@ -1,11 +1,110 @@
 # range-source
 
-Range reading and storage for players and other code that reads a file by offset: from a URL (with HTTP range requests), a local file or an app's own data source, through a small buffer, keeping what was read between plays under a size cap. The alpha-video players use it on every platform.
+Range reading and storage for players and other code that reads a file by offset: from a URL (with HTTP range requests), a local file or an app's own data source, through a small buffer, keeping what was read between plays under a size cap. The alpha-video players ([alpha-video](https://github.com/MediaCacheDev/alpha-video) and [alpha-video-gpu](https://github.com/MediaCacheDev/alpha-video-gpu)) read through it on every platform.
 
-- [`web/`](web): the `range-source-web` npm package, a dependency of `alpha-video-web` and `alpha-video-gpu-web`. Sources for URLs, `Blob`s and memory, a block reader, and stores in OPFS, IndexedDB, the Cache API or memory.
-- [`native/`](native): the same reader and stores in C++17, compiled into the Android and iOS players, which vendor `native/src`.
+| | Package | Holds |
+|---|---|---|
+| Web | `range-source-web` (npm), in [`web/`](web) | sources for URLs, `Blob`s and memory, a block reader, and stores in OPFS, IndexedDB, the Cache API or memory |
+| Android | `dev.mediacache:range-source` (Maven) | the reader and stores (`librangesource.so`), the Java API, and `RangeDataSource` for app data sources |
+| Android, Media3 | `dev.mediacache:range-source-media3` (Maven), opt-in | `Media3RangeDataSource`, any Media3 `DataSource.Factory` as a `RangeDataSource` |
+| iOS | Swift package `range-source`, product `RangeSource`; pod `range-source` | the reader and stores, the Objective-C and Swift API, and `RangeDataSource` |
+| React Native | `react-native-range-source` (npm) | the Android library and the iOS sources, autolinked |
 
-The players own range streaming and storage, and depend on nothing else. Other caches plug in through the players' data-source hooks: a byte source on the web (or a Service Worker answering the players' `fetch` requests), an `AlphaVideoDataSource` on Android (or a Media3 `DataSource.Factory`, through `alpha-video-media3`) and on iOS.
+The Android and iOS packages share one C++17 core, [`native/`](native).
+
+## With the alpha-video players
+
+Natively, range-source is an add-on the players find at runtime. It gives them:
+- range requests, with one request kept open while playing on, and one more for a far seek;
+- read-ahead and retries;
+- `storage` on disk or in memory, under `maxStorageBytes`, named by `cacheKey`, so a clip played through plays again offline;
+- app data sources, registered by name.
+
+**It's included by default,** except in React Native, which needs it in the install line:
+
+| | Included | To leave it out |
+|---|---|---|
+| Android | a dependency of `dev.mediacache:alpha-video` and `dev.mediacache:alpha-video-gpu` | `exclude group: 'dev.mediacache', module: 'range-source'` on the player |
+| iOS, CocoaPods | the players' `Source` subspec, in their default subspecs | name the subspecs, e.g. `pod 'alpha-video', :subspecs => ['VPX', 'AV1']` or `pod 'alpha-video-gpu', :subspecs => ['Core']` |
+| iOS, Swift Package Manager | the players' default package trait, `Source` | `traits: []` on the player's dependency, from a package. An Xcode app project can't choose a package's traits (Xcode 16.4), so an app that adds the player in Xcode always has range-source |
+| React Native | `npm i react-native-range-source` beside the player | leave it out of the install |
+| Web | `range-source-web`, a dependency of `alpha-video-web` and `alpha-video-gpu-web` | not removable: it's 7 KB gzipped |
+
+**Without it,** the players use a basic input. Local files, assets and `content://` play as before. A URL is downloaded whole into a temporary file, with one request from the start, and plays as it arrives. A seek past what has arrived waits for it, and nothing is kept between plays. `storage`, `maxStorageBytes` and `cacheKey` have no effect, and the player logs a warning once. A data source reports `onError` with the code `NO_SOURCE_MODULE`.
+
+One copy serves both players, and there's nothing to call. On Android, the add-on is about 320 KB per architecture, its own C++ runtime included.
+
+### Data sources
+
+An app that fetches, caches or decrypts the bytes itself registers a data source under a name, and gives a player that name (`source={{ uri, dataSource: 'name' }}` in React Native, `setDataSource("name")` on Android, `dataSource = "name"` on iOS). The player then reads through it: by range as it plays, with the same read-ahead, retries and store. A data source registered once serves both players.
+
+**Android:** implement `dev.mediacache.rangesource.RangeDataSource`. `open(uri, position, headers)` starts a read at `position` and returns the file's size and version (`new Info(size, etag, lastModified)`). `read` and `close` follow, and `cancel` (optional) stops a read blocked on the network from another thread. Register a factory, which makes a source per reader:
+
+```kotlin
+RangeDataSources.register("mine") { MyDataSource() }
+```
+
+To read through a Media3 `DataSource.Factory` (OkHttp, Cronet, a `CacheDataSource`), add the adapter. It compiles against `androidx.media3:media3-datasource` 1.8.0 and uses the app's own Media3:
+
+```gradle
+implementation 'dev.mediacache:range-source-media3:1.0.0'
+```
+
+```kotlin
+RangeDataSources.register("media3", Media3RangeDataSource.factory(dataSourceFactory))
+```
+
+The built-in fetcher, `RangeHttpDataSource`, is public too, to register with other timeouts or a user agent: `RangeHttpDataSource.Factory().setConnectTimeoutMs(…).setReadTimeoutMs(…).setUserAgent(…)`.
+
+**iOS:** conform to `RangeDataSource`, the role of `AVAssetResourceLoaderDelegate` without the AVFoundation types. Each call reads a window of a few megabytes: call `response` once with the file's size and version, then `data` with the bytes in order, then `completion`. One instance serves every reader, so a read mustn't depend on the one before:
+
+```swift
+import RangeSource
+
+final class MyDataSource: NSObject, RangeDataSource {
+    func read(url: URL, offset: Int64, length: Int64, headers: [String: String],
+              response: @escaping (RangeDataInfo) -> Void,
+              data: @escaping (Data) -> Void,
+              completion: @escaping (Error?) -> Void) -> RangeCancellable {
+        // response(RangeDataInfo(size: total, etag: etag, lastModified: nil)), data(…), completion(nil)
+    }
+}
+
+RangeDataSources.register(MyDataSource(), name: "mine")
+```
+
+**React Native:** the registration is native code, as above: in `MainApplication` on Android, and in `AppDelegate` on iOS (`import RangeSource`).
+
+## On its own
+
+Anything that reads a file by offset can read through it: a demuxer, a decoder, an image or archive parser, a game engine's asset loader.
+
+**It isn't a cache for ExoPlayer or AVPlayer.** They read through their own stacks, and already have one: Media3's `CacheDataSource`, and [MediaCache](https://github.com/MediaCacheDev/media-cache) for both. range-source is for code that reads files itself.
+
+**Android:**
+
+```kotlin
+val store = RangeSourceStore.disk(File(context.cacheDir, "my-player"), 512L shl 20)  // or RangeSourceStore.memory("my-player", cap)
+RangeSource.open("https://example.com/clip.bin", store).use { reader ->
+    val header = ByteArray(64 * 1024)
+    val n = reader.read(0, header, 0, header.size)  // waits for the bytes: fewer at a block's end, -1 at the end
+    val stream = reader.inputStream(n.toLong())       // or read on as a stream
+}
+```
+
+`RangeSource.open(uri, dataSource, store)` reads through a `RangeDataSource` instead. `RangeSourceReader.open(source, uri, store, key, options)` takes a key for the store, and options: headers, block size, memory, read-ahead and retries. `tryRead` never waits, for render loops: it returns `RangeSourceReader.PENDING` and asks for the bytes. `fetchAll()` reads the rest of the file, so that the store holds it. Calls block on the network, so not on the main thread.
+
+**iOS:**
+
+```swift
+import RangeSource
+
+let store = try RangeSourceStore.disk(path: cachesFolder + "/my-player", maxBytes: 512 << 20)
+let reader = try RangeSource.open(url: url, store: store)
+let header = try reader.readData(at: 0, length: 64 * 1024)  // empty at the end of the file
+```
+
+`RangeSourceReader.open(url:dataSource:store:key:options:)` reads through a `RangeDataSource` and takes a key and options. `tryRead(at:into:length:)` never waits, returning `RangeSourcePending` while the bytes are on their way, and `fetchAll()` reads the rest. Not on the main queue.
 
 ## Native
 
@@ -14,6 +113,8 @@ The players own range streaming and storage, and depend on nothing else. Other c
 - `RangeReader` reads by offset, blocking until the bytes are there, through blocks in memory and the store. One fetch thread keeps one read open on the upstream and reconnects only for a read far from it, so playing from the start is one request and a seek one more. It reads 2 MB ahead of the last read, retries a failed read 3 times, and `fetchAll()` reads the whole file. `tryRead()` never waits, for render loops: it returns `kPending` and asks for the bytes, so a later call finds them. A clip the store holds whole is read without opening the upstream, so it plays offline. Thread-safe.
 
 These are C++ classes in the namespace `rangesource`. [`include/range_source.h`](native/include/range_source.h) is the same as a C interface: a versioned table of functions (`range_source_plugin()`), with the upstream as a struct of function pointers. Code built separately, such as a player in another `.so` with its own C++ runtime, uses the reader through it. With `RANGE_SOURCE_CLIENT_NAMESPACE` defined, the header adds a C++ wrapper over the table with the classes' methods, in a namespace the includer names.
+
+The Android and iOS packages compile `native/src` and hand the table to the players: `RangeSource.plugin()` in Java, `RangeSource.plugin` in Objective-C, which the players find by class name. The players carry only `native/include`. A new version of the table keeps `RANGE_SOURCE_ABI` and adds functions at the end (`structSize` says which are there), so the add-on updates without the players.
 
 [`include/range_source_download.h`](native/include/range_source_download.h) is the basic input, for a player running without the add-on: `DownloadReader`, header-only, downloads the file from one open at 0 into a temporary file (unlinked at once, so nothing stays behind) and reads it as it arrives, resuming a dropped connection where it stopped. It keeps nothing between plays. Both it and the add-on's reader are a `Reader`, so a player holds either.
 
