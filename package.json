@@ -30,6 +30,14 @@
     "!react-native/android/.cxx",
     "!.DS_Store"
   ],
+  "scripts": {
+    "test": "npm run test:native && npm run test:web",
+    "test:native": "cmake -S native -B native/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build native/build && ctest --test-dir native/build --output-on-failure",
+    "test:web": "npm --prefix web test",
+    "test:ios": "scripts/test-ios.sh",
+    "test:android": "cd android && ./gradlew connectedDebugAndroidTest :media3:assembleDebug",
+    "test:all": "npm test && npm run test:ios && npm run test:android"
+  },
   "keywords": [
     "react-native",
     "range-source",

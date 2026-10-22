@@ -210,11 +210,39 @@ int64_t n = reader->read(0, header.data(), header.size());   // waits for the by
 
 - **Code built separately** (another `.so` with its own C++ runtime, or a plugin) uses the same reader through the C table in `range_source.h`, above, with the same steps: `RANGE_SOURCE_CLIENT_NAMESPACE` gives it the C++ wrapper's `Store::disk`, `RangeReader::open`, `read` and `tryRead`.
 
-The host build runs the tests twice, on the classes and through the table:
+The host build runs the tests twice, on the classes and through the table ([Tests](#tests)).
+
+## Tests
+
+Each platform has its own tests, with an npm script in the repository's root to run them. `npm test` runs the two that need no device, C++ and the web; `npm run test:all` runs all four.
+
+| Platform | Command | Needs | What it runs |
+|---|---|---|---|
+| C++ | `npm run test:native` | CMake and Ninja (`brew install cmake ninja`) | `native/test` twice, on the C++ classes and through the C table in `range_source.h`: the reader, both stores, eviction, versions, retries, cancelling and offline reads |
+| Web | `npm run test:web` | Node 18+, and `npm ci` in `web/` once | Vitest in Node: the sources and reader, the stores (IndexedDB through `fake-indexeddb`), and `httpSource` against a local range server ([web/README.md](web/README.md#testing)) |
+| iOS | `npm run test:ios` | Xcode 16 and an iPhone simulator | `ios/Tests/RangeSourceTests` through SwiftPM: the Objective-C API, stores, and app data sources registered with `RangeDataSources` |
+| Android | `npm run test:android` | The Android SDK and NDK (`ANDROID_HOME` or `android/local.properties`), and a device or emulator in `adb devices` | `android/src/androidTest` on the device: the Java API over the native reader and stores, with a data source in memory. It also builds `range-source-media3` |
+
+The commands behind them, to run one directly:
 
 ```bash
-cmake -S native -B native/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build native/build && ctest --test-dir native/build
+# C++
+cmake -S native -B native/build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build native/build && ctest --test-dir native/build --output-on-failure
+
+# Web
+cd web && npm ci && npm test
+
+# iOS: IOS_SIMULATOR picks the simulator, otherwise a booted iPhone or the first one available
+IOS_SIMULATOR="iPhone 16 Pro" scripts/test-ios.sh
+# which runs
+xcodebuild test -scheme range-source -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+
+# Android, on the device adb sees
+cd android && ./gradlew connectedDebugAndroidTest
 ```
+
+The alpha-video players test range-source too, as they use it: streaming with it and without it in their own repositories ([alpha-video](https://github.com/MediaCacheDev/alpha-video), [alpha-video-gpu](https://github.com/MediaCacheDev/alpha-video-gpu)).
 
 ## License
 
