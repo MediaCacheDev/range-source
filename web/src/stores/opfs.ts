@@ -1,10 +1,10 @@
 import type { EntryRecord, StoreBackend } from './block-store';
 
-const ROOT = 'alpha-video-source';
+const ROOT = 'range-source';
 const META = 'meta.json';
 
 /**
- * Blocks in the origin private file system, at `alpha-video-source/<namespace>/<hash of key>/`,
+ * Blocks in the origin private file system, at `range-source/<namespace>/<hash of key>/`,
  * one file per block plus meta.json. One file per block because createWritable() writes a whole
  * file to a swap copy on every close, which makes appending to one big file slow.
  */

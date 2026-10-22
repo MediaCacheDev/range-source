@@ -1,7 +1,7 @@
 {
-  "name": "alpha-video-source",
+  "name": "range-source-web",
   "version": "1.0.0",
-  "description": "Byte sources and storage for the alpha-video players on the web: HTTP range requests, Blobs, memory or your own source, read through a small buffer and optionally stored in OPFS, IndexedDB, the Cache API or memory.",
+  "description": "Range reading and storage for players on the web: HTTP range requests, Blobs, memory or your own source, read through a small buffer and optionally stored in OPFS, IndexedDB, the Cache API or memory.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -39,12 +39,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MediaCacheDev/alpha-video-source.git",
+    "url": "git+https://github.com/MediaCacheDev/range-source.git",
     "directory": "web"
   },
-  "homepage": "https://github.com/MediaCacheDev/alpha-video-source#readme",
+  "homepage": "https://github.com/MediaCacheDev/range-source#readme",
   "bugs": {
-    "url": "https://github.com/MediaCacheDev/alpha-video-source/issues"
+    "url": "https://github.com/MediaCacheDev/range-source/issues"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

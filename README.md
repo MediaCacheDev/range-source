@@ -1,8 +1,8 @@
-# alpha-video-source
+# range-source
 
-Range reading and storage shared by the alpha-video players: reading a file by offset from a URL (with HTTP range requests), a local file or an app's own data source, through a small buffer, and keeping what was read between plays under a size cap.
+Range reading and storage for players and other code that reads a file by offset: from a URL (with HTTP range requests), a local file or an app's own data source, through a small buffer, keeping what was read between plays under a size cap. The alpha-video players use it on every platform.
 
-- [`web/`](web): the `alpha-video-source` npm package, used by `alpha-video-web` and `alpha-video-gpu-web`. Sources for URLs, `Blob`s and memory, a block reader, and stores in OPFS, IndexedDB, the Cache API or memory.
+- [`web/`](web): the `range-source-web` npm package, a dependency of `alpha-video-web` and `alpha-video-gpu-web`. Sources for URLs, `Blob`s and memory, a block reader, and stores in OPFS, IndexedDB, the Cache API or memory.
 - [`native/`](native): the same reader and stores in C++17, compiled into the Android and iOS players, which vendor `native/src`.
 
 The players own range streaming and storage, and depend on nothing else. Other caches plug in through the players' data-source hooks: a byte source on the web (or a Service Worker answering the players' `fetch` requests), an `AlphaVideoDataSource` on Android (or a Media3 `DataSource.Factory`, through `alpha-video-media3`) and on iOS.

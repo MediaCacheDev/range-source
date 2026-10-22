@@ -3,9 +3,9 @@ import type { EntryRecord, StoreBackend } from './block-store';
 const ENTRIES = 'entries';
 const BLOCKS = 'blocks';
 
-/** Blocks in IndexedDB, in the database `alpha-video-source-<namespace>`. */
+/** Blocks in IndexedDB, in the database `range-source-<namespace>`. */
 export function indexedDbBackend(namespace: string): StoreBackend {
-  const name = `alpha-video-source-${namespace}`;
+  const name = `range-source-${namespace}`;
   let db: IDBDatabase | null = null;
 
   const transaction = <T>(

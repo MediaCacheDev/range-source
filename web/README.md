@@ -1,11 +1,11 @@
-# alpha-video-source
+# range-source-web
 
-Byte sources and storage for the alpha-video players on the web. A player reads a file by offset: from a URL with HTTP range requests, a `Blob`, memory, or a source of your own. The reads go through a small memory buffer, and can be kept between plays in OPFS, IndexedDB, the Cache API or memory, under a size cap.
+Range reading and storage on the web, for players and other code that reads a file by offset: from a URL with HTTP range requests, a `Blob`, memory, or a source of your own. The reads go through a small memory buffer, and can be kept between plays in OPFS, IndexedDB, the Cache API or memory, under a size cap.
 
-`alpha-video-gpu-web` (the KTX2 player) uses it. Apps only need it directly to write their own source or store; the players re-export what's needed for that.
+The alpha-video players (`alpha-video-web` and `alpha-video-gpu-web`) depend on it and re-export what an app needs to write its own source or store, so their users don't install it themselves.
 
 ```bash
-npm install alpha-video-source
+npm install range-source-web
 ```
 
 ## Sources

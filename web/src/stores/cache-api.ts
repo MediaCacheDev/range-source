@@ -1,14 +1,14 @@
 import type { EntryRecord, StoreBackend } from './block-store';
 
 /** Never fetched: the Cache API only needs http(s) URLs to file blocks under. */
-const BASE = 'https://alpha-video-source.invalid/';
+const BASE = 'https://range-source.invalid/';
 
 /**
- * Blocks in the Cache API, in the cache `alpha-video-source-<namespace>`, each as its own
+ * Blocks in the Cache API, in the cache `range-source-<namespace>`, each as its own
  * synthetic 200 response (Cache.put refuses 206 responses, so range responses can't be stored as is).
  */
 export function cacheApiBackend(namespace: string): StoreBackend {
-  const name = `alpha-video-source-${namespace}`;
+  const name = `range-source-${namespace}`;
   let cache: Cache | null = null;
 
   const url = (key: string, part: string) => `${BASE}${encodeURIComponent(key)}/${part}`;
