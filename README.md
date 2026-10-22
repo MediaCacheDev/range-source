@@ -15,6 +15,8 @@ The players own range streaming and storage, and depend on nothing else. Other c
 
 These are C++ classes in the namespace `rangesource`. [`include/range_source.h`](native/include/range_source.h) is the same as a C interface: a versioned table of functions (`range_source_plugin()`), with the upstream as a struct of function pointers. Code built separately, such as a player in another `.so` with its own C++ runtime, uses the reader through it. With `RANGE_SOURCE_CLIENT_NAMESPACE` defined, the header adds a C++ wrapper over the table with the classes' methods, in a namespace the includer names.
 
+[`include/range_source_download.h`](native/include/range_source_download.h) is the basic input, for a player running without the add-on: `DownloadReader`, header-only, downloads the file from one open at 0 into a temporary file (unlinked at once, so nothing stays behind) and reads it as it arrives, resuming a dropped connection where it stopped. It keeps nothing between plays. Both it and the add-on's reader are a `Reader`, so a player holds either.
+
 The host build runs the tests twice, on the classes and through the table:
 
 ```bash

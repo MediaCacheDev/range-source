@@ -6,6 +6,9 @@
 #ifdef RANGE_SOURCE_TESTS_THROUGH_ABI
 #define RANGE_SOURCE_CLIENT_NAMESPACE rangesource_client
 #include "range_source.h"
+#include "range_source_download.h"
+
+#include <dirent.h>
 #else
 #include "RangeReader.h"
 #include "Store.h"
@@ -240,7 +243,8 @@ std::shared_ptr<RangeReader> openReader(const std::shared_ptr<Remote>& remote, s
 }
 
 // Reads [pos, pos + size) as a demuxer would, in pieces
-bool readsMatch(RangeReader& reader, const std::vector<uint8_t>& content, int64_t pos, int64_t size,
+template <class Reader>
+bool readsMatch(Reader& reader, const std::vector<uint8_t>& content, int64_t pos, int64_t size,
                 int64_t piece = 64 * KB) {
     std::vector<uint8_t> buffer(static_cast<size_t>(piece));
     const int64_t end = std::min<int64_t>(pos + size, static_cast<int64_t>(content.size()));
@@ -645,8 +649,10 @@ TEST(anUpstreamInCReadsThroughTheTable) {
 }
 
 TEST(aLongUpstreamErrorIsCutNotLost) {
-    auto remote = remoteOf(1 * MB);
-    auto reader = openReader(remote);
+    auto remote = remoteOf(4 * MB);
+    ReaderOptions options = quickRetries();
+    options.readAheadBytes = 0;
+    auto reader = openReader(remote, nullptr, "", options);
     const std::string message(2000, 'x');
     {
         std::lock_guard<std::mutex> lock(remote->mutex);
@@ -654,8 +660,166 @@ TEST(aLongUpstreamErrorIsCutNotLost) {
         remote->offline = true;
     }
     std::vector<uint8_t> buffer(10);
-    CHECK(reader->read(900 * KB, buffer.data(), 10) == -1);
+    // Far from the open read, so it reopens
+    CHECK(reader->read(3 * MB, buffer.data(), 10) == -1);
     CHECK(reader->lastError() == message.substr(0, 511), "%zu characters", reader->lastError().size());
+}
+
+//==============================================================================
+// The basic input: DownloadReader
+//==============================================================================
+
+std::shared_ptr<DownloadReader> openDownload(const std::shared_ptr<Remote>& remote, const std::string& dir) {
+    std::string error;
+    DownloadReader::Options options;
+    options.retryDelayMs = 1;
+    auto reader = DownloadReader::open(std::make_unique<FakeUpstream>(remote), dir, error, options);
+    CHECK(reader, "open failed: %s", error.c_str());
+    return reader;
+}
+
+int filesIn(const std::string& dir) {
+    int count = 0;
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* entry = readdir(d)) {
+            if (entry->d_name[0] != '.') count++;
+        }
+        closedir(d);
+    }
+    return count;
+}
+
+std::string madeDir(const char* name) {
+    const std::string dir = tempDir(name);
+    mkdir(dir.c_str(), 0755);
+    return dir;
+}
+
+TEST(aDownloadReadsTheFileInOneRequest) {
+    auto remote = remoteOf(3 * MB + 17);
+    auto reader = openDownload(remote, madeDir("download"));
+    CHECK(reader->size() == static_cast<int64_t>(remote->content.size()));
+    CHECK(readsMatch(*reader, remote->content, 2 * MB, 1LL << 40));
+    CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
+    CHECK(reader->fetchAll());
+    CHECK(remote->openPositions().size() == 1, "%zu opens", remote->openPositions().size());
+    std::vector<uint8_t> byte(1);
+    CHECK(reader->read(static_cast<int64_t>(remote->content.size()), byte.data(), 1) == 0);
+}
+
+TEST(aDownloadLeavesNoFile) {
+    const std::string dir = madeDir("unlinked");
+    auto remote = remoteOf(1 * MB);
+    auto reader = openDownload(remote, dir);
+    CHECK(filesIn(dir) == 0, "%d files", filesIn(dir));
+    CHECK(reader->fetchAll());
+    CHECK(filesIn(dir) == 0, "%d files", filesIn(dir));
+}
+
+TEST(aDownloadReadWaitsForItsBytes) {
+    auto remote = remoteOf(2 * MB);
+    remote->chunk = 16 * KB;
+    remote->readDelayUs = 500;
+    auto reader = openDownload(remote, madeDir("wait"));
+    std::vector<uint8_t> buffer(1000);
+    const int64_t pos = 2 * MB - 1000;
+    CHECK(reader->tryRead(pos, buffer.data(), 1000) == Reader::kPending);
+    CHECK(reader->read(pos, buffer.data(), 1000) == 1000);
+    CHECK(std::memcmp(buffer.data(), remote->content.data() + pos, 1000) == 0);
+}
+
+TEST(aDroppedDownloadResumesWhereItStopped) {
+    auto remote = remoteOf(3 * MB);
+    remote->dropAt = 1 * MB + 5000;
+    auto reader = openDownload(remote, madeDir("resume"));
+    CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
+    std::vector<int64_t> opens = remote->openPositions();
+    CHECK(opens.size() == 2, "%zu opens", opens.size());
+    if (opens.size() == 2) CHECK(opens[1] > 0 && opens[1] <= 1 * MB + 5000, "reopened at %lld", (long long)opens[1]);
+}
+
+TEST(aDownloadFailsWhenTheSourceChanges) {
+    auto remote = remoteOf(3 * MB);
+    remote->dropAt = 1 * MB;
+    remote->readDelayUs = 200;
+    {
+        std::lock_guard<std::mutex> lock(remote->mutex);
+        remote->etag = "v1";
+    }
+    auto reader = openDownload(remote, madeDir("changed"));
+    {
+        std::lock_guard<std::mutex> lock(remote->mutex);
+        remote->etag = "v2";
+    }
+    std::vector<uint8_t> buffer(100);
+    CHECK(reader->read(2 * MB, buffer.data(), 100) == -1);
+    CHECK(reader->lastError() == "the source changed while it was read", "%s", reader->lastError().c_str());
+    CHECK(!reader->fetchAll());
+}
+
+TEST(aDownloadFailsOnceRetriesRunOut) {
+    auto remote = remoteOf(3 * MB);
+    remote->dropAt = 1 * MB;
+    remote->readDelayUs = 200;
+    auto reader = openDownload(remote, madeDir("offline"));
+    remote->offline = true;
+    std::vector<uint8_t> buffer(100);
+    CHECK(reader->read(2 * MB, buffer.data(), 100) == -1);
+    CHECK(reader->lastError() == "offline", "%s", reader->lastError().c_str());
+    // What arrived before still reads
+    CHECK(readsMatch(*reader, remote->content, 0, 512 * KB));
+}
+
+TEST(aDownloadLearnsItsSizeAtTheEnd) {
+    auto remote = remoteOf(1 * MB + 333);
+    remote->knowsSize = false;
+    auto reader = openDownload(remote, madeDir("unknown"));
+    CHECK(reader->size() == -1);
+    CHECK(readsMatch(*reader, remote->content, 0, 1LL << 40));
+    std::vector<uint8_t> byte(1);
+    CHECK(reader->read(static_cast<int64_t>(remote->content.size()), byte.data(), 1) == 0);
+    CHECK(reader->size() == static_cast<int64_t>(remote->content.size()), "size %lld", (long long)reader->size());
+}
+
+TEST(closingADownloadDoesntWaitForTheUpstream) {
+    auto remote = remoteOf(1 * MB);
+    remote->stall = true;
+    auto reader = openDownload(remote, madeDir("close"));
+    std::vector<uint8_t> buffer(1000);
+    std::thread reading([&] { CHECK(reader->read(0, buffer.data(), 1000) == -1); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const auto start = std::chrono::steady_clock::now();
+    reader->close();
+    reading.join();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    CHECK(ms < 200, "took %lld ms", (long long)ms);
+    reader.reset();
+    remote->stall = false;
+}
+
+TEST(abortStopsAWaitingDownloadRead) {
+    auto remote = remoteOf(1 * MB);
+    remote->stall = true;
+    auto reader = openDownload(remote, madeDir("abort"));
+    TestAbort abort{false};
+    std::thread later([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        abort = true;
+    });
+    std::vector<uint8_t> buffer(1000);
+    CHECK(reader->read(500 * KB, buffer.data(), 1000, &abort) == -1);
+    CHECK(!reader->fetchAll(&abort));
+    later.join();
+    remote->stall = false;
+}
+
+TEST(aDownloadCantStartWithoutItsFolder) {
+    auto remote = remoteOf(1 * MB);
+    std::string error;
+    auto reader = DownloadReader::open(std::make_unique<FakeUpstream>(remote), "/nonexistent/folder", error);
+    CHECK(!reader);
+    CHECK(error.find("/nonexistent/folder") != std::string::npos, "%s", error.c_str());
+    CHECK(remote->openPositions().empty());
 }
 
 #endif

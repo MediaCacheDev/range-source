@@ -267,15 +267,38 @@ private:
     RangeSourceStore* const store_;
 };
 
+/**
+ * What a player reads a file through: the add-on's RangeReader, or, without the add-on, a
+ * DownloadReader (range_source_download.h). Thread-safe.
+ */
+class Reader {
+public:
+    static constexpr int64_t kPending = RANGE_SOURCE_PENDING;
+
+    virtual ~Reader() = default;
+    /**
+     * Reads up to `size` bytes at `pos`, waiting for them. Returns how many, 0 at or past the end,
+     * or -1 if they can't be had (lastError() says why), once closed, or once `*abort` is nonzero.
+     */
+    virtual int64_t read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<int32_t>* abort = nullptr) = 0;
+    /** read() without waiting: kPending while the bytes are on their way. */
+    virtual int64_t tryRead(int64_t pos, uint8_t* out, int64_t size) = 0;
+    /** Waits until the whole file is held. False on an error, once closed, or on an abort. */
+    virtual bool fetchAll(const std::atomic<int32_t>* abort = nullptr) = 0;
+    /** The file's size, or -1 while it isn't known. */
+    virtual int64_t size() const = 0;
+    virtual std::string lastError() const = 0;
+    /** Fails reads in progress and later ones, and stops fetching. */
+    virtual void close() = 0;
+};
+
 /** The add-on's reader, with the C++ reader's methods. */
-class RangeReader {
+class RangeReader : public Reader {
 public:
     struct Stats {
         int64_t opens = 0;
         int64_t bytesFetched = 0;
     };
-
-    static constexpr int64_t kPending = RANGE_SOURCE_PENDING;
 
     static std::shared_ptr<RangeReader> open(const RangeSourcePlugin* plugin, std::unique_ptr<Upstream> upstream,
                                              const std::shared_ptr<Store>& store, const std::string& key,
@@ -299,16 +322,20 @@ public:
         return std::shared_ptr<RangeReader>(new RangeReader(plugin, reader));
     }
 
-    ~RangeReader() { plugin_->releaseReader(reader_); }
+    ~RangeReader() override { plugin_->releaseReader(reader_); }
     RangeReader(const RangeReader&) = delete;
     RangeReader& operator=(const RangeReader&) = delete;
 
-    int64_t read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<int32_t>* abort = nullptr) {
+    int64_t read(int64_t pos, uint8_t* out, int64_t size, const std::atomic<int32_t>* abort = nullptr) override {
         return plugin_->read(reader_, pos, out, size, cFlag(abort));
     }
-    int64_t tryRead(int64_t pos, uint8_t* out, int64_t size) { return plugin_->tryRead(reader_, pos, out, size); }
-    bool fetchAll(const std::atomic<int32_t>* abort = nullptr) { return plugin_->fetchAll(reader_, cFlag(abort)) != 0; }
-    int64_t size() const { return plugin_->size(reader_); }
+    int64_t tryRead(int64_t pos, uint8_t* out, int64_t size) override {
+        return plugin_->tryRead(reader_, pos, out, size);
+    }
+    bool fetchAll(const std::atomic<int32_t>* abort = nullptr) override {
+        return plugin_->fetchAll(reader_, cFlag(abort)) != 0;
+    }
+    int64_t size() const override { return plugin_->size(reader_); }
 
     SourceInfo info() const {
         RangeSourceInfo c{};
@@ -320,7 +347,7 @@ public:
         return info;
     }
 
-    std::string lastError() const {
+    std::string lastError() const override {
         char message[512];
         const size_t n = plugin_->lastError(reader_, message, sizeof(message));
         if (n < sizeof(message)) return std::string(message, n);
@@ -339,7 +366,7 @@ public:
         return stats;
     }
 
-    void close() { plugin_->closeReader(reader_); }
+    void close() override { plugin_->closeReader(reader_); }
 
 private:
     RangeReader(const RangeSourcePlugin* plugin, RangeSourceReader* reader) : plugin_(plugin), reader_(reader) {}
