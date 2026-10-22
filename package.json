@@ -13,6 +13,7 @@
     "ios",
     "react-native-range-source.podspec",
     "react-native.config.js",
+    "CHANGELOG.md",
     "LICENSE",
     "!android/build",
     "!android/*/build",
