@@ -24,6 +24,7 @@
     "!android/gradlew.bat",
     "!android/media3",
     "!android/src/androidTest",
+    "!ios/Tests",
     "!react-native/android/build",
     "!react-native/android/.gradle",
     "!react-native/android/.cxx",
