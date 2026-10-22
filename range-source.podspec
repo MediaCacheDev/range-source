@@ -10,7 +10,12 @@ Pod::Spec.new do |s|
   s.name                = 'range-source'
   s.module_name         = 'RangeSource'
   s.version             = '1.0.0'
-  s.summary             = 'Reads files by offset from URLs or app data sources: range requests, read-ahead, retries, and storage on disk or in memory.'
+  s.summary             = 'Range source and storage manager for video and other partial content: HTTP range requests, read-ahead, disk or memory storage.'
+  s.description         = <<-DESC
+    Reads files by offset from URLs (HTTP range requests, one open request with read-ahead and
+    retries) or the app's own data sources, and keeps what was read on disk or in memory under one
+    size cap, so a file played once opens offline. The alpha-video players stream through it.
+  DESC
   s.homepage            = 'https://github.com/MediaCacheDev/range-source'
   s.license             = { :type => 'MIT', :file => 'LICENSE' }
   s.author              = { 'Daniel Kasprowicz' => '9932671+danielkpl2@users.noreply.github.com' }

@@ -21,7 +21,7 @@ afterEvaluate {
 
                 pom {
                     name = artifact
-                    description = project.ext.has('publishDescription') ? project.ext.publishDescription : 'Range streaming and storage for players that read files by offset: one open request, read-ahead, retries, and disk and memory stores under one cap.'
+                    description = project.ext.has('publishDescription') ? project.ext.publishDescription : 'Range source and storage manager for video and other partial content on Android: reads files by offset through HTTP range requests or your own data source, with read-ahead and retries, and keeps what was read on disk or in memory under one size cap.'
                     url = repoUrl
                     inceptionYear = '2026'
                     licenses {

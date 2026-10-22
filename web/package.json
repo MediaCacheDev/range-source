@@ -1,7 +1,7 @@
 {
   "name": "range-source-web",
   "version": "1.0.0",
-  "description": "Range reading and storage for players on the web: HTTP range requests, Blobs, memory or your own source, read through a small buffer and optionally stored in OPFS, IndexedDB, the Cache API or memory.",
+  "description": "Range source and storage manager for video and other partial content on the web: reads files by offset through HTTP range requests, Blobs or your own source, and keeps what was read in OPFS, IndexedDB, the Cache API or memory under one size cap.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -28,12 +28,23 @@
     "prepack": "npm run build"
   },
   "keywords": [
+    "range-source",
     "range-requests",
+    "http-range",
+    "partial-content",
+    "byte-range",
+    "byte-source",
     "streaming",
+    "video",
+    "video-streaming",
+    "video-cache",
+    "media-cache",
+    "storage",
+    "offline",
     "opfs",
     "indexeddb",
-    "cache",
-    "byte-source"
+    "cache-api",
+    "cache"
   ],
   "author": "Daniel Kasprowicz",
   "license": "MIT",

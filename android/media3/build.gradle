@@ -43,5 +43,5 @@ dependencies {
 }
 
 ext.publishArtifactId = 'range-source-media3'
-ext.publishDescription = 'Media3 DataSource.Factory adapter for range-source: range streaming and storage over an app\'s own Media3 data sources (OkHttp, Cronet, caches).'
+ext.publishDescription = 'Media3 adapter for range-source, the range source and storage manager for video and other partial content: reads through an app\'s own Media3 DataSource.Factory (OkHttp, Cronet, caches).'
 apply from: rootProject.file('publish.gradle')

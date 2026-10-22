@@ -9,7 +9,8 @@ Pod::Spec.new do |s|
   s.name                = 'react-native-range-source'
   s.module_name         = 'RangeSource'
   s.version             = package['version']
-  s.summary             = package['description']
+  s.summary             = 'Range source and storage manager for video and other partial content, for React Native.'
+  s.description         = package['description']
   s.homepage            = package['homepage']
   s.license             = package['license']
   s.authors             = package['author']
