@@ -35,9 +35,9 @@ export interface ByteReader {
   prefetch(offset: number, length: number): void;
   /**
    * Resolves once every block fetched so far is written to the store, so another reader of it,
-   * such as the Service Worker's, finds them there.
+   * such as the Service Worker's, finds them there. Optional for readers of your own.
    */
-  stored(): Promise<void>;
+  stored?(): Promise<void>;
   close(): void;
 }
 

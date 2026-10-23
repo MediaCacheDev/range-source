@@ -170,7 +170,6 @@ async function pageReader(event: RangeSourceFetchEvent, marks: Marks, scope: Ran
     },
     peek: () => null,
     prefetch: () => {},
-    stored: async () => {},
     close: () => {
       closed = true;
     },

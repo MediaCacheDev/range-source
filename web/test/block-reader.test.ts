@@ -152,7 +152,7 @@ describe('openReader with a store', () => {
     const store = freshStore();
     const reader = await openReader(new CountingSource(data), { store, key: 'clip', blockSize: 64 * KB, readAheadBytes: 0 });
     await reader.read(0, 100 * KB);
-    await reader.stored();
+    await reader.stored!();
     expect((await store.lookup('clip'))!.blocks).toEqual([0, 1]);
     reader.close();
   });
