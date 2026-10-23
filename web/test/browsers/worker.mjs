@@ -219,6 +219,14 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
     report(r.ok && r.ended, 'plays bytes the page holds', r.error ?? r.url);
   }
 
+  // A URL with a store the page holds: the page reads it, and the worker passes the bytes on
+  {
+    const src = url('media', 'page-store');
+    const r = await play({ src, pageStore: 'memory', toEnd: true });
+    const held = await page.evaluate(([u]) => window.lookup('test', u, 'memory'), [src]);
+    report(r.ok && r.ended && held?.blocks === blocks, "plays a URL through the page's store", r.error ?? `${main.requests(`${name}-page-store`).length} requests, ${held?.blocks}/${blocks} blocks`);
+  }
+
   // A server without ranges
   {
     const src = url('plain', 'plain');

@@ -14,9 +14,10 @@ window.register = async () => {
 window.controlled = () => !!navigator.serviceWorker.controller;
 
 /** Plays src in a <video> through the worker: loads it, optionally seeks, optionally plays to the end. */
-window.play = async ({ src, bytesFrom, type, namespace = 'test', storage, key, headers, maxBytes, seek, toEnd }) => {
+window.play = async ({ src, bytesFrom, type, namespace = 'test', storage, pageStore, key, headers, maxBytes, seek, toEnd }) => {
   let source = src;
   if (bytesFrom) source = new Uint8Array(await (await fetch(bytesFrom)).arrayBuffer());
+  if (pageStore) storage = createStore(pageStore, { namespace });
   const handle = await serviceWorkerUrl(source, { namespace, storage, key, headers, maxBytes, contentType: bytesFrom ? type : undefined });
   if (!handle) return { error: 'no range-source worker controls the page' };
   const video = document.createElement('video');
@@ -55,8 +56,8 @@ window.play = async ({ src, bytesFrom, type, namespace = 'test', storage, key, h
 };
 
 /** What the store holds under key. */
-window.lookup = async (namespace, key) => {
-  const store = createStore('auto', { namespace });
+window.lookup = async (namespace, key, kind = 'auto') => {
+  const store = createStore(kind, { namespace });
   const entry = await store.lookup(key);
   if (!entry) return null;
   return {

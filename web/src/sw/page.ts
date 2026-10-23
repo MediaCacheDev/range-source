@@ -1,7 +1,8 @@
 import { openReader, type ByteReader } from '../block-reader';
+import { httpSource } from '../http-source';
 import { blobSource, isByteSource, memorySource } from '../sources';
 import { createStore } from '../stores';
-import type { ByteSource, StorageKind } from '../types';
+import type { ByteSource, ByteStore, StorageKind } from '../types';
 import { MESSAGE, PROTOCOL_VERSION, workerUrl, type AskReply, type AskRequest } from './protocol';
 
 export interface RegisterWorkerOptions {
@@ -19,8 +20,12 @@ export type WorkerSource = string | ByteSource | Blob | ArrayBuffer | Uint8Array
 export interface WorkerUrlOptions {
   /** The store's namespace, as in createStore. */
   namespace: string;
-  /** Where the bytes are kept. Default 'auto' for a URL, 'none' for a source the page holds. */
-  storage?: StorageKind;
+  /**
+   * Where the bytes are kept. Default 'auto' for a URL, 'none' for a source the page holds. The
+   * worker opens a kind's store itself; with a store of the page's own, the page reads the file
+   * through it and passes the bytes on, a URL included.
+   */
+  storage?: StorageKind | ByteStore;
   /** The store's cap. */
   maxBytes?: number;
   /** What the bytes are stored under. Default: the URL. A source the page holds needs one to be stored. */
@@ -106,13 +111,14 @@ export async function serviceWorkerUrl(src: WorkerSource, options: WorkerUrlOpti
   const scope = (await serviceWorkers()!.ready).scope;
   const id = newId();
 
-  if (typeof src === 'string') {
+  const { storage } = options;
+  if (typeof src === 'string' && typeof storage !== 'object') {
     const url = new URL(src, baseUrl()).href;
     const headers = [...new Headers(options.headers).entries()];
     if (headers.length) entries.set(id, { headers });
     const marked = workerUrl(scope, {
       namespace: options.namespace,
-      storage: options.storage ?? 'auto',
+      storage: storage ?? 'auto',
       maxBytes: options.maxBytes,
       key: options.key !== undefined && options.key !== url ? options.key : undefined,
       url,
@@ -121,13 +127,15 @@ export async function serviceWorkerUrl(src: WorkerSource, options: WorkerUrlOpti
     return { url: marked, release: () => entries.delete(id) };
   }
 
-  const source = toSource(src);
-  const store = options.key ? createStore(options.storage ?? 'none', { namespace: options.namespace, maxBytes: options.maxBytes }) : null;
+  const href = typeof src === 'string' ? new URL(src, baseUrl()).href : undefined;
+  const source = href ? httpSource(href, { headers: options.headers }) : toSource(src as Exclude<WorkerSource, string>);
+  const key = options.key ?? href;
+  const store = !key ? null : typeof storage === 'object' ? storage : createStore(storage ?? 'none', { namespace: options.namespace, maxBytes: options.maxBytes });
   let opened: Promise<ByteReader> | null = null;
   const entry: PageEntry = {
     headers: [],
     contentType: options.contentType ?? (typeof Blob !== 'undefined' && src instanceof Blob ? src.type || undefined : undefined),
-    reader: () => (opened ??= openReader(source, { store, key: store ? options.key : undefined })),
+    reader: () => (opened ??= openReader(source, { store, key: store ? key : undefined })),
     close: () => {
       opened?.then((reader) => reader.close(), () => {});
     },
