@@ -1,20 +1,8 @@
 # Changelog
 
-The packages built from this repository share one version: `range-source-web` and `react-native-range-source` on npm, `dev.mediacache:range-source` and `dev.mediacache:range-source-media3` on Maven Central, and the `range-source` Swift package (product `RangeSource`) and pod.
+The native packages built from this repository share one version: `react-native-range-source` on npm, `dev.mediacache:range-source` and `dev.mediacache:range-source-media3` on Maven Central, and the `range-source` Swift package (product `RangeSource`) and pod. `range-source-web` has its own changelog, [web/CHANGELOG.md](https://github.com/MediaCacheDev/range-source/blob/main/web/CHANGELOG.md), shipped in its package.
 
-## Unreleased
-
-`range-source-web` only; the native packages are unchanged.
-
-- **A Service Worker for media elements.** `<video>` and `<audio>` make their own requests, so what they played skipped the reader and the store. The worker answers them: from the store first, fetching what's missing by range and storing it, so a file played through plays again with no requests, offline too.
-  - The page registers it before rendering with `registerRangeSourceWorker('/range-source-sw.js')`, which resolves once the worker controls the page (claiming it again after a hard reload), and gives elements `serviceWorkerUrl(src, { namespace, key, storage, maxBytes, headers })`, a URL on the page's origin that the worker answers. `rangeSourceWorker()` tells whether one controls the page.
-  - It sends the page's `headers` for the element, and plays a `Blob`, bytes or a `ByteSource` the page holds, whose ranges the page reads and passes on. A file on another origin without CORS is passed through, unstored.
-  - The package ships the worker as `dist/range-source-sw.js` (export `range-source-web/range-source-sw.js`). An app with its own worker adds the handler from `range-source-web/sw` (`installRangeSourceWorker`, `handleRangeSourceFetch`) or `importScripts` the script.
-- **Stores are shared between pages, tabs and the worker:** blocks written and keys deleted are announced on a `BroadcastChannel`, and a key open in any of them isn't evicted (Web Locks).
-- `SourceInfo.contentType`, from the response's `Content-Type` or the `Blob`'s type.
-- `httpSource`'s `openAt` option: the first request starts there rather than at 0.
-- `ByteReader.stored()`: resolves once the blocks read so far are in the store.
-- `npm run test:browsers` in `web/`: the worker in Chromium, Firefox and WebKit through Playwright.
+`react-native-range-source` is for Android and iOS. On react-native-web there's nothing to install: the players' web packages depend on `range-source-web`, and this package's JavaScript is an empty module there.
 
 ## 1.0.0 - 2026-10-22
 
@@ -43,9 +31,5 @@ First public release. Range reading and storage for code that reads a file by of
   - Included by default on Android (a dependency of both players), in CocoaPods (their `Source` subspec) and in Swift packages (their default trait `Source`); React Native apps install `react-native-range-source` beside the player.
   - An app can leave it out. The players then download a URL whole for each play, and a data source reports `NO_SOURCE_MODULE`.
 - **The C interface** `range_source.h`: a versioned table of functions (`RANGE_SOURCE_ABI` 1, with `structSize` for later additions), so code built separately, such as a player in another `.so` with its own C++ runtime, uses the same reader. `RANGE_SOURCE_CLIENT_NAMESPACE` adds a C++ wrapper over it. `range_source_download.h` is the basic input players use without the add-on: a header-only download into a temporary file, read as it arrives.
-- **Web:** `range-source-web`, ES module and CommonJS builds with types, about 7 KB minified and gzipped.
-  - Sources: `httpSource(url, { headers, init, fetch, reconnectGap })`, `blobSource` for a `Blob` or `File`, `memorySource`, and any object with `size` and `read(offset, length, signal)`.
-  - `httpSource` keeps one response open for reads that follow on or skip ahead by up to 512 KB. A server that answers `200` is read progressively. A changed file fails with `SourceChangedError`, and a failed request throws `HttpSourceError` with its `status`.
-  - `openReader(source, { store, key, … })`, with `read`, `peek` (for code that can't await, such as a WebAssembly demuxer), `prefetch` and `close`. It reads 1 MB ahead in 256 KB blocks, keeps 16 MB of them in memory, and aborts read-ahead for a seek.
-  - Stores: `createStore('auto' | 'opfs' | 'indexeddb' | 'cache' | 'memory' | 'none', { namespace, maxBytes })`. `'auto'` is OPFS, else IndexedDB, else memory. One cap per namespace, 512 MB by default, evicting the least recently used keys except open ones. A store of your own implements `ByteStore`, or a `StoreBackend` for `BlockStore` to add the index and eviction.
+- **Web:** `range-source-web` 1.0.0, released at the same time ([web/CHANGELOG.md](https://github.com/MediaCacheDev/range-source/blob/main/web/CHANGELOG.md)).
 - **Tests** for every platform from the repository's root: `npm test` (C++ and web), `npm run test:ios`, `npm run test:android` and `npm run test:all`.
