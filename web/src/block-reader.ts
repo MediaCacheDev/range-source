@@ -33,6 +33,11 @@ export interface ByteReader {
   peek(offset: number, length: number): Uint8Array | null;
   /** Starts fetching a range in the background, if it isn't held already. */
   prefetch(offset: number, length: number): void;
+  /**
+   * Resolves once every block fetched so far is written to the store, so another reader of it,
+   * such as the Service Worker's, finds them there.
+   */
+  stored(): Promise<void>;
   close(): void;
 }
 
@@ -97,6 +102,7 @@ class BlockReader implements ByteReader {
   private running: FetchTask | null = null;
   private readonly closer = new AbortController();
   private closed = false;
+  private readonly writes = new Set<Promise<void>>();
 
   constructor(
     private readonly source: ByteSource,
@@ -163,6 +169,10 @@ class BlockReader implements ByteReader {
     const end = Math.min(offset + length, this.size);
     if (offset >= end) return;
     this.ensure(Math.floor(offset / this.blockSize), Math.floor((end - 1) / this.blockSize), true);
+  }
+
+  async stored(): Promise<void> {
+    await Promise.all(this.writes);
   }
 
   close(): void {
@@ -271,7 +281,7 @@ class BlockReader implements ByteReader {
         const from = i * this.blockSize;
         const block = data.slice(from, from + this.blockLength(index));
         this.remember(index, block);
-        if (this.resource && !this.closed) this.resource.write(index, block).catch(() => {});
+        if (this.resource && !this.closed) this.trackWrite(this.resource.write(index, block));
         this.settle(index, (pending) => pending.resolve(block));
       }
     } catch (error) {
@@ -280,6 +290,15 @@ class BlockReader implements ByteReader {
       }
       for (let i = 0; i < task.count; i++) this.settle(task.first + i, (pending) => pending.reject(error));
     }
+  }
+
+  private trackWrite(write: Promise<unknown>): void {
+    const done: Promise<void> = write.then(
+      () => {},
+      () => {},
+    );
+    this.writes.add(done);
+    done.then(() => this.writes.delete(done));
   }
 
   /** Opens the source when blocks are needed that the store was expected to hold. */

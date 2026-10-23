@@ -73,6 +73,7 @@ window.readHead = async (namespace, url) => {
   const store = createStore('auto', { namespace });
   const reader = await openReader(httpSource(url), { store, key: url, readAheadBytes: 0 });
   await reader.read(0, 64 * 1024);
+  await reader.stored();
   reader.close();
 };
 

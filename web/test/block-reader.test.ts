@@ -147,6 +147,16 @@ describe('openReader with a store', () => {
     again.close();
   });
 
+  it('resolves stored() once the blocks read are in the store', async () => {
+    const data = pattern(300 * KB);
+    const store = freshStore();
+    const reader = await openReader(new CountingSource(data), { store, key: 'clip', blockSize: 64 * KB, readAheadBytes: 0 });
+    await reader.read(0, 100 * KB);
+    await reader.stored();
+    expect((await store.lookup('clip'))!.blocks).toEqual([0, 1]);
+    reader.close();
+  });
+
   it('fills in the blocks a partial copy is missing', async () => {
     const data = pattern(300 * KB);
     const store = freshStore();

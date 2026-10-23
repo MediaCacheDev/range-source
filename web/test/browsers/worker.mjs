@@ -198,7 +198,6 @@ for (const [name, type] of Object.entries({ chromium, firefox, webkit })) {
   {
     const src = url('media', 'shared');
     await page.evaluate(([u]) => window.readHead('test', u), [src]);
-    await sleep(100);
     const r = await play({ src, toEnd: true });
     const starts = main.requests(`${name}-shared`).map(startOf);
     const fromZero = starts.filter((s) => s === 0).length;
