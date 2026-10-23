@@ -21,6 +21,7 @@ export function blobSource(blob: Blob): ByteSource {
       return {
         size: blob.size,
         lastModified: file.lastModified !== undefined ? String(file.lastModified) : undefined,
+        contentType: blob.type || undefined,
       };
     },
     async read(offset, length) {

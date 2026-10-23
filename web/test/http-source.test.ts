@@ -76,6 +76,29 @@ describe('httpSource with range support', () => {
     source.close?.();
   });
 
+  it('opens at openAt, and reads from there on the same connection', async () => {
+    const s = await serve();
+    const source = httpSource(`${s.url}/clip.bin`, { openAt: 2_000_000 });
+    const info = await source.open();
+    expect(info.size).toBe(data.byteLength);
+    expect(info.contentType).toBe('application/octet-stream');
+    expectSlice(await source.read(2_000_000, 300_000), data, 2_000_000, 300_000);
+    expect(s.requests.map((r: { range: string }) => r.range)).toEqual(['bytes=2000000-']);
+    expectSlice(await source.read(0, 1000), data, 0, 1000);
+    expect(s.requests[1].range).toBe('bytes=0-');
+    source.close?.();
+  });
+
+  it('opens from 0 when openAt is past the end', async () => {
+    const s = await serve();
+    const source = httpSource(`${s.url}/clip.bin`, { openAt: data.byteLength + 10 });
+    expect((await source.open()).size).toBe(data.byteLength);
+    expect(s.requests.map((r: { range: string }) => r.range)).toEqual([`bytes=${data.byteLength + 10}-`, 'bytes=0-']);
+    expectSlice(await source.read(0, 1000), data, 0, 1000);
+    expect(s.requests.length).toBe(2);
+    source.close?.();
+  });
+
   it('sends the given headers', async () => {
     const s = await serve({ requireHeader: ['Authorization', 'Bearer t'] });
     await expect(httpSource(`${s.url}/clip.bin`).open()).rejects.toBeInstanceOf(HttpSourceError);

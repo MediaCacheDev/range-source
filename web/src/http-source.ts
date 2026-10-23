@@ -9,6 +9,8 @@ export interface HttpSourceOptions {
   fetch?: typeof fetch;
   /** How far ahead of an open connection a read may start and still use it, rather than reconnecting. */
   reconnectGap?: number;
+  /** Where open() asks the file from, for a reader that will start reading there rather than at 0. */
+  openAt?: number;
 }
 
 const DEFAULT_RECONNECT_GAP = 512 * 1024;
@@ -44,28 +46,49 @@ class HttpSource implements ByteSource {
   private rangeSupported = true;
   private whole: Uint8Array | null = null;
   private connection: Connection | null = null;
+  private openAt: number;
 
   constructor(private readonly url: string, private readonly options: HttpSourceOptions) {
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.reconnectGap = options.reconnectGap ?? DEFAULT_RECONNECT_GAP;
+    this.openAt = Math.max(0, Math.floor(options.openAt ?? 0));
   }
 
   async open(signal?: AbortSignal): Promise<SourceInfo> {
     if (this.info) return this.info;
+    let start = this.openAt;
     const controller = new AbortController();
-    const response = await this.request(0, controller, signal);
+    let response: Response;
+    try {
+      response = await this.request(start, controller, signal);
+    } catch (error) {
+      // Past the end of the file
+      if (!(start > 0 && error instanceof HttpSourceError && error.status === 416)) throw error;
+      start = 0;
+      response = await this.request(start, controller, signal);
+    }
     const version = versionOf(response);
 
     if (response.status === 206) {
       const range = parseContentRange(response.headers.get('content-range'));
       const length = contentLength(response);
-      const size = range?.total ?? length;
+      // Without Content-Range, a response from 0 still has the size in Content-Length
+      const size = range?.total ?? (start === 0 ? length : undefined);
+      if (range && range.start !== start) throw new Error(`${this.url} answered bytes=${start}- with bytes ${range.start}-`);
       if (size === undefined) {
+        if (start > 0) {
+          // The size is only known from the start: open there instead
+          controller.abort();
+          this.openAt = 0;
+          return this.open(signal);
+        }
         this.whole = await readAll(response);
         this.info = { size: this.whole.byteLength, ...version };
         return this.info;
       }
       this.info = { size, ...version };
+      this.connection = connectionOf(response, controller, start);
+      return this.info;
     } else {
       this.rangeSupported = false;
       const length = contentLength(response);
@@ -253,12 +276,14 @@ function isEncoded(response: Response): boolean {
   return encoding !== null && encoding.trim().toLowerCase() !== 'identity';
 }
 
-function versionOf(response: Response): Pick<SourceInfo, 'etag' | 'lastModified'> {
+function versionOf(response: Response): Pick<SourceInfo, 'etag' | 'lastModified' | 'contentType'> {
   const etag = response.headers.get('etag');
   const lastModified = response.headers.get('last-modified');
+  const contentType = response.headers.get('content-type');
   return {
     etag: etag ? etag.replace(/^W\//, '') : undefined,
     lastModified: lastModified ?? undefined,
+    contentType: contentType ?? undefined,
   };
 }
 

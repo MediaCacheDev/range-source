@@ -6,6 +6,8 @@ export interface SourceInfo {
   etag?: string;
   /** Last-Modified, for sources without an ETag. */
   lastModified?: string;
+  /** The media type, such as `video/webm`, when the source knows it. Not part of the version. */
+  contentType?: string;
 }
 
 /**

@@ -17,3 +17,12 @@ export {
   type StoreBackend,
   type EntryRecord,
 } from './stores';
+export {
+  registerRangeSourceWorker,
+  rangeSourceWorker,
+  serviceWorkerUrl,
+  type RegisterWorkerOptions,
+  type WorkerSource,
+  type WorkerUrl,
+  type WorkerUrlOptions,
+} from './sw/page';

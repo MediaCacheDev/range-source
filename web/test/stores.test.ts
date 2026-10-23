@@ -98,6 +98,53 @@ describe.each([
   });
 });
 
+describe('BlockStores shared between contexts', () => {
+  // Two stores with the same name stand in for a page and its Service Worker
+  const pair = (maxBytes = 1024 * KB) => {
+    const namespace = `shared-${counter++}`;
+    const make = () => new BlockStore([() => indexedDbBackend(namespace)], maxBytes, namespace);
+    return [make(), make()] as const;
+  };
+
+  it('see the blocks each other writes, and the keys each other removes', async () => {
+    const [page, worker] = pair();
+    await worker.lookup('nothing');
+    const resource = await page.open('a', { ...info(100 * KB), contentType: 'video/webm' }, 64 * KB);
+    await resource.write(0, block(64 * KB, 3));
+    await tick(20);
+    expect(await worker.lookup('a')).toEqual({ info: { ...info(100 * KB), contentType: 'video/webm' }, blockSize: 64 * KB, blocks: [0] });
+    expect(await worker.usage()).toBe(64 * KB);
+
+    const theirs = await worker.open('a', info(100 * KB), 64 * KB);
+    expect((await theirs.read(0))![5]).toBe(3);
+    await theirs.write(1, block(36 * KB, 4));
+    await tick(20);
+    expect(resource.complete).toBe(true);
+    expect(await page.usage()).toBe(100 * KB);
+    resource.close();
+    theirs.close();
+
+    await worker.delete('a');
+    await tick(20);
+    expect(await page.lookup('a')).toBeNull();
+    expect(await page.usage()).toBe(0);
+  });
+
+  it('replace a key opened elsewhere for another version', async () => {
+    const [page, worker] = pair();
+    const resource = await page.open('a', info(64 * KB), 64 * KB);
+    await resource.write(0, block(64 * KB, 1));
+    resource.close();
+    await tick(20);
+    const newer = await worker.open('a', info(64 * KB, '"v2"'), 64 * KB);
+    await newer.write(0, block(64 * KB, 2));
+    newer.close();
+    await tick(20);
+    expect((await page.lookup('a'))?.info.etag).toBe('"v2"');
+    expect(await page.usage()).toBe(64 * KB);
+  });
+});
+
 describe('createStore', () => {
   it("returns null for 'none' and passes a custom store through", () => {
     expect(createStore('none', { namespace: 'x' })).toBeNull();

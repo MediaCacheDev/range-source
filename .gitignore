@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 *.log
 web/dist/
+web/test/browsers/build/
 native/build*/
 android/build/
 android/media3/build/

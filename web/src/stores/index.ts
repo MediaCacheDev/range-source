@@ -21,7 +21,9 @@ const stores = new Map<string, BlockStore>();
  *
  * Backends that aren't available fall back: 'auto' and 'opfs' to IndexedDB, then memory;
  * 'cache' to IndexedDB, then memory; 'indexeddb' to memory. Stores are shared per kind and
- * namespace within a page, so every player in it counts against the same cap.
+ * namespace within a page, so every player in it counts against the same cap. Across the
+ * origin's contexts (tabs, workers, a Service Worker), stores on the same backend and namespace
+ * keep their indexes in step, and don't evict a key another context has open.
  */
 export function createStore(kind: StorageKind | ByteStore, options: StoreOptions): ByteStore | null {
   if (typeof kind === 'object') return kind;
@@ -30,7 +32,7 @@ export function createStore(kind: StorageKind | ByteStore, options: StoreOptions
   const id = `${kind}:${options.namespace}`;
   let store = stores.get(id);
   if (!store) {
-    store = new BlockStore(backendsFor(kind, options.namespace), maxBytes);
+    store = new BlockStore(backendsFor(kind, options.namespace), maxBytes, options.namespace);
     stores.set(id, store);
   }
   store.maxBytes = maxBytes;
