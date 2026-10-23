@@ -2,6 +2,20 @@
 
 The packages built from this repository share one version: `range-source-web` and `react-native-range-source` on npm, `dev.mediacache:range-source` and `dev.mediacache:range-source-media3` on Maven Central, and the `range-source` Swift package (product `RangeSource`) and pod.
 
+## Unreleased
+
+`range-source-web` only; the native packages are unchanged.
+
+- **A Service Worker for media elements.** `<video>` and `<audio>` make their own requests, so what they played skipped the reader and the store. The worker answers them: from the store first, fetching what's missing by range and storing it, so a file played through plays again with no requests, offline too.
+  - The page registers it before rendering with `registerRangeSourceWorker('/range-source-sw.js')`, which resolves once the worker controls the page (claiming it again after a hard reload), and gives elements `serviceWorkerUrl(src, { namespace, key, storage, maxBytes, headers })`, a URL on the page's origin that the worker answers. `rangeSourceWorker()` tells whether one controls the page.
+  - It sends the page's `headers` for the element, and plays a `Blob`, bytes or a `ByteSource` the page holds, whose ranges the page reads and passes on. A file on another origin without CORS is passed through, unstored.
+  - The package ships the worker as `dist/range-source-sw.js` (export `range-source-web/range-source-sw.js`). An app with its own worker adds the handler from `range-source-web/sw` (`installRangeSourceWorker`, `handleRangeSourceFetch`) or `importScripts` the script.
+- **Stores are shared between pages, tabs and the worker:** blocks written and keys deleted are announced on a `BroadcastChannel`, and a key open in any of them isn't evicted (Web Locks).
+- `SourceInfo.contentType`, from the response's `Content-Type` or the `Blob`'s type.
+- `httpSource`'s `openAt` option: the first request starts there rather than at 0.
+- `ByteReader.stored()`: resolves once the blocks read so far are in the store.
+- `npm run test:browsers` in `web/`: the worker in Chromium, Firefox and WebKit through Playwright.
+
 ## 1.0.0 - 2026-10-22
 
 First public release. Range reading and storage for code that reads a file by offset, such as a demuxer or decoder: from a URL with HTTP range requests, a local file or an app's own data source, through a small buffer, keeping what was read between plays under one size cap. Before 1.0.0 it was `alpha-video-source`, copied into each alpha-video player; the players now depend on it instead.

@@ -4,7 +4,7 @@ Range reading and storage for players and other code that reads a file by offset
 
 | | Package | Holds |
 |---|---|---|
-| Web | `range-source-web` (npm), in [`web/`](web) | sources for URLs, `Blob`s and memory, a block reader, and stores in OPFS, IndexedDB, the Cache API or memory |
+| Web | `range-source-web` (npm), in [`web/`](web) | sources for URLs, `Blob`s and memory, a block reader, stores in OPFS, IndexedDB, the Cache API or memory, and a Service Worker that serves `<video>` and `<audio>` from them |
 | Android | `dev.mediacache:range-source` (Maven) | the reader and stores (`librangesource.so`), the Java API, and `RangeDataSource` for app data sources |
 | Android, Media3 | `dev.mediacache:range-source-media3` (Maven), opt-in | `Media3RangeDataSource`, any Media3 `DataSource.Factory` as a `RangeDataSource` |
 | iOS | Swift package `range-source`, product `RangeSource`; pod `range-source` | the reader and stores, the Objective-C and Swift API, and `RangeDataSource` |
@@ -28,7 +28,7 @@ Natively, range-source is an add-on the players find at runtime. It gives them:
 | iOS, CocoaPods | the players' `Source` subspec, in their default subspecs | name the subspecs, e.g. `pod 'alpha-video', :subspecs => ['VPX', 'AV1']` or `pod 'alpha-video-gpu', :subspecs => ['Core']` |
 | iOS, Swift Package Manager | the players' default package trait, `Source` | `traits: []` on the player's dependency, from a package. An Xcode app project can't choose a package's traits (Xcode 16.4), so an app that adds the player in Xcode always has range-source |
 | React Native | `npm i react-native-range-source` beside the player | leave it out of the install |
-| Web | `range-source-web`, a dependency of `alpha-video-web` and `alpha-video-gpu-web` | not removable: it's 7 KB gzipped |
+| Web | `range-source-web`, a dependency of `alpha-video-web` and `alpha-video-gpu-web` | not removable: it's 10 KB gzipped |
 
 **Without it,** the players use a basic input. Local files, assets and `content://` play as before. A URL is downloaded whole into a temporary file, with one request from the start, and plays as it arrives. A seek past what has arrived waits for it, and nothing is kept between plays. `storage`, `maxStorageBytes` and `cacheKey` have no effect, and the player logs a warning once. A data source reports `onError` with the code `NO_SOURCE_MODULE`.
 
@@ -220,6 +220,7 @@ Each platform has its own tests, with an npm script in the repository's root to 
 |---|---|---|---|
 | C++ | `npm run test:native` | CMake and Ninja (`brew install cmake ninja`) | `native/test` twice, on the C++ classes and through the C table in `range_source.h`: the reader, both stores, eviction, versions, retries, cancelling and offline reads |
 | Web | `npm run test:web` | Node 18+, and `npm ci` in `web/` once | Vitest in Node: the sources and reader, the stores (IndexedDB through `fake-indexeddb`), and `httpSource` against a local range server ([web/README.md](web/README.md#testing)) |
+| Web, in browsers | `npm run test:web:browsers` | As above, plus Playwright's browsers (`npx playwright install` in `web/`) and ffmpeg | The Service Worker in Chromium, Firefox and WebKit: `<video>` streaming and storing through it, offline, seeks, headers, sources the page holds, CORS, eviction across pages, a hard reload, cross-origin isolation |
 | iOS | `npm run test:ios` | Xcode 16 and an iPhone simulator | `ios/Tests/RangeSourceTests` through SwiftPM: the Objective-C API, stores, and app data sources registered with `RangeDataSources` |
 | Android | `npm run test:android` | The Android SDK and NDK (`ANDROID_HOME` or `android/local.properties`), and a device or emulator in `adb devices` | `android/src/androidTest` on the device: the Java API over the native reader and stores, with a data source in memory. It also builds `range-source-media3` |
 
@@ -232,6 +233,7 @@ cmake --build native/build && ctest --test-dir native/build --output-on-failure
 
 # Web
 cd web && npm ci && npm test
+npm run test:browsers
 
 # iOS: IOS_SIMULATOR picks the simulator, otherwise a booted iPhone or the first one available
 IOS_SIMULATOR="iPhone 16 Pro" scripts/test-ios.sh
