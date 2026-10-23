@@ -2,7 +2,7 @@
 
 `range-source-web` on npm. The native packages built from the same repository (`react-native-range-source`, `dev.mediacache:range-source`, the `range-source` Swift package and pod) have their own changelog, [CHANGELOG.md](https://github.com/MediaCacheDev/range-source/blob/main/CHANGELOG.md) in the repository's root.
 
-## Unreleased
+## 1.1.0 - 2026-10-23
 
 - **A Service Worker for media elements.** `<video>` and `<audio>` make their own requests, so what they played skipped the reader and the store. The worker answers them: from the store first, fetching what's missing by range and storing it, so a file played through plays again with no requests, offline too.
   - The page registers it before rendering with `registerRangeSourceWorker('/range-source-sw.js')`, which resolves once the worker controls the page (claiming it again after a hard reload), and gives elements `serviceWorkerUrl(src, { namespace, key, storage, maxBytes, headers })`, a URL on the page's origin that the worker answers. `rangeSourceWorker()` tells whether one controls the page.
