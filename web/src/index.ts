@@ -2,6 +2,7 @@ export type { ByteSource, ByteStore, SourceInfo, StorageKind, StoredEntry, Store
 export { HttpSourceError, SourceChangedError } from './types';
 export { blobSource, isByteSource, memorySource, openSource } from './sources';
 export { httpSource, type HttpSourceOptions } from './http-source';
+export { RangeDataSources, type DataSourceFactory } from './data-sources';
 export { openReader, DEFAULT_BLOCK_SIZE, type ByteReader, type ReaderOptions } from './block-reader';
 export { sameVersion } from './version';
 export {

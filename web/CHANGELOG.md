@@ -2,6 +2,10 @@
 
 `range-source-web` on npm. The native packages built from the same repository (`react-native-range-source`, `dev.mediacache:range-source`, the `range-source` Swift package and pod) have their own changelog, [CHANGELOG.md](https://github.com/MediaCacheDev/range-source/blob/main/CHANGELOG.md) in the repository's root.
 
+## 1.2.0 - Unreleased
+
+- **Named data sources:** `RangeDataSources.register(name, (uri, { headers }) => ByteSource)`, `unregister` and `get`, as on Android and iOS, for players that take a URL and a name, such as the react-native-web views of react-native-alpha-video and react-native-alpha-video-gpu. It is kept on `Symbol.for('range-source.dataSources')`, so a library such as MediaCache registers without importing range-source-web.
+
 ## 1.1.0 - 2026-10-23
 
 - **A Service Worker for media elements.** `<video>` and `<audio>` make their own requests, so what they played skipped the reader and the store. The worker answers them: from the store first, fetching what's missing by range and storing it, so a file played through plays again with no requests, offline too.

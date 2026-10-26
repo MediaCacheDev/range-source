@@ -26,7 +26,7 @@ Natively, range-source is an add-on the players find at runtime. It gives them:
 |---|---|---|
 | Android | a dependency of `dev.mediacache:alpha-video` and `dev.mediacache:alpha-video-gpu` | `exclude group: 'dev.mediacache', module: 'range-source'` on the player |
 | iOS, CocoaPods | the players' `Source` subspec, in their default subspecs | name the subspecs, e.g. `pod 'alpha-video', :subspecs => ['VPX', 'AV1']` or `pod 'alpha-video-gpu', :subspecs => ['Core']` |
-| iOS, Swift Package Manager | the players' default package trait, `Source` | `traits: []` on the player's dependency, from a package. An Xcode app project can't choose a package's traits (Xcode 16.4), so an app that adds the player in Xcode always has range-source |
+| iOS, Swift Package Manager | alpha-video's `AlphaVideoSource` product, added beside the codec products; alpha-video-gpu's `AlphaVideoGPU` product (players 1.0.1 or later; with 1.0.0, add this package's `RangeSource` product) | don't add `AlphaVideoSource`; take `AlphaVideoGPUCore` instead of `AlphaVideoGPU` |
 | React Native | `npm i react-native-range-source` beside the player | leave it out of the install |
 | Web | `range-source-web`, a dependency of `alpha-video-web` and `alpha-video-gpu-web` | not removable: it's 10 KB gzipped |
 
@@ -73,7 +73,9 @@ final class MyDataSource: NSObject, RangeDataSource {
 RangeDataSources.register(MyDataSource(), name: "mine")
 ```
 
-**React Native:** the registration is native code, as above: in `MainApplication` on Android, and in `AppDelegate` on iOS (`import RangeSource`).
+**React Native:** the registration is native code, as above: in `MainApplication` on Android, and in `AppDelegate` on iOS (`import RangeSource`). On react-native-web, names are registered with range-source-web ([web/README.md](web/README.md)).
+
+**MediaCache** is a ready-made data source on Android, iOS, React Native and the web: `cache.registerRangeDataSource()` registers it as `mediacache`, and the players' files then stream through the cache, under its eviction, TTL and offline replay ([MediaCache's README](https://github.com/MediaCacheDev/media-cache#transparent-video-alpha-video-and-alpha-video-gpu)). It plugs in here, so an app using MediaCache with the players keeps range-source: MediaCache fetches and stores the bytes, and range-source passes the players' reads to it.
 
 ## On its own
 

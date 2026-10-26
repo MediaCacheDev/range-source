@@ -85,6 +85,18 @@ Built in:
 
 Failed requests throw `HttpSourceError`, with its `status` and `url`.
 
+### Named data sources
+
+Where a player takes a URL and a name rather than a source, such as the react-native-web views of react-native-alpha-video and react-native-alpha-video-gpu (`source={{ uri, dataSource: 'mediacache' }}`), the name is looked up in `RangeDataSources`, as on Android and iOS:
+
+```ts
+import { RangeDataSources } from 'range-source-web';
+
+RangeDataSources.register('mycache', (uri, { headers } = {}) => myCacheSource(uri, headers));
+```
+
+The factory makes a source per URL and gets the headers the player was asked to send. The registry is kept on `Symbol.for('range-source.dataSources')`, so a library can register without importing range-source-web, and copies of it in one app share it. MediaCache registers this way with `cache.registerRangeDataSource()`.
+
 ## Reading
 
 `openReader(source, options)` returns a reader with `read(offset, length, signal)`, `peek(offset, length)`, `prefetch(offset, length)` and `close()`. `peek` is for code that can't await, such as a WebAssembly demuxer: it returns the bytes already in memory at once, up to the end of their block, or null if they aren't there yet, and then you `read` them and peek again. It reads ahead like `read`. The reader reads the source in 256 KB blocks:
